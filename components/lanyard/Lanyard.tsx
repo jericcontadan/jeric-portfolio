@@ -49,9 +49,15 @@ const CARD_D = 0.02;
 const ROPE = 0.5; // length of each of the 3 rope segments
 const ANCHOR_Y = 2.6; // just above the top edge of the view, so the strap comes from off-screen
 const HANG = CARD_H / 2 + 0.13; // card centre → joint at the clip
+// Where the card's centre comes to rest: the rope hangs straight down, fully stretched,
+// plus the joints' small stretch under gravity (measured: 0.037 at every screen size).
+const REST_Y = ANCHOR_Y - 3 * ROPE - HANG - 0.037;
+// Height of the view at the card's depth, at camera zoom 1.
+const VIEW_H = 2 * CAMERA_Z * Math.tan(THREE.MathUtils.degToRad(FOV / 2));
 const STRAP_W = 0.3; // strap width in world units
 const STRAP_TEX_ASPECT = 2874 / 160; // lanyard.png width / height
-// meshline widths are in clip space; this converts a world width at the card's depth.
+// meshline widths are in clip space; this converts a world width at the card's depth
+// (at zoom 1; Band scales it by the camera zoom every frame).
 const LINE_WIDTH = STRAP_W / Math.tan(THREE.MathUtils.degToRad(FOV / 2)) / 2;
 
 const segmentProps = {
@@ -106,8 +112,11 @@ export default function Lanyard({
     // Own wrapper so framing can measure the canvas area reliably.
     <div ref={box} data-lanyard-canvas className="h-full w-full">
       <Canvas
-        camera={{ position: [0, 0, CAMERA_Z], fov: FOV }}
-        dpr={[1, 1.5]}
+        // Tight near/far planes: the card is only 0.02 thick, and some mobile GPUs have a
+        // 16-bit depth buffer, so a wide range would let the back face bleed through.
+        camera={{ position: [0, 0, CAMERA_Z], fov: FOV, near: 5, far: 30 }}
+        // Native resolution up to 2x: sharp on phones and tablets, still smooth on low-end Android.
+        dpr={[1, 2]}
         gl={{ alpha: true, antialias: true, powerPreference: "default" }}
         frameloop={active ? "always" : "never"}
         eventSource={eventSource}
@@ -153,8 +162,10 @@ export default function Lanyard({
 }
 
 /**
- * Puts world x = 0 (the lanyard anchor) at the stage's horizontal centre using a camera
- * view offset, so a canvas wider than the stage shows no perspective skew.
+ * Matches the 3D card to the still card's box ([data-static-card]), which CSS lays out per
+ * breakpoint: the camera zoom sets the size, and a view offset puts the resting card on
+ * the still card's centre (no perspective skew, and no jump when one replaces the other).
+ * Without a still card it falls back to centring the anchor on the stage at zoom 1.
  */
 function Framing({
   stage,
@@ -180,8 +191,20 @@ function Framing({
       const r = el.getBoundingClientRect();
       const s = r.left + r.width / 2 - c.left; // stage centre in canvas px
       const full = 2 * Math.max(s, W - s);
+      const card = el
+        .querySelector("[data-static-card]")
+        ?.getBoundingClientRect();
+      let zoom = 1;
+      let offY = 0;
+      if (card && card.height > 0) {
+        const ppw = card.height / CARD_H; // px per world unit the card should get
+        zoom = (ppw * VIEW_H) / H;
+        const cy = card.top + card.height / 2 - c.top; // still card centre in canvas px
+        offY = H / 2 - REST_Y * ppw - cy;
+      }
+      camera.zoom = zoom;
       camera.aspect = full / H;
-      camera.setViewOffset(full, H, full / 2 - s, 0, W, H);
+      camera.setViewOffset(full, H, full / 2 - s, offY, W, H);
       camera.updateProjectionMatrix();
     };
     frame();
@@ -191,6 +214,8 @@ function Framing({
       ro.observe(stage.current);
       const area = stage.current.querySelector("[data-lanyard-canvas]");
       if (area) ro.observe(area);
+      const still = stage.current.querySelector("[data-static-card]");
+      if (still) ro.observe(still);
     }
     return () => {
       window.removeEventListener("resize", frame);
@@ -251,6 +276,7 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
   const [dragged, setDragged] = useState<THREE.Vector3 | false>(false);
   const [hovered, setHovered] = useState(false);
   const size = useThree((s) => s.size);
+  const gl = useThree((s) => s.gl);
   // One Vector2 shared with the shader uniform; updated in place on resize.
   const [resolution] = useState(() => new THREE.Vector2(1, 1));
   useEffect(() => {
@@ -261,9 +287,14 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
   const [front, back, strap] = useTexture(
     ["/card-front.png", "/card-back.png", "/lanyard.png"],
     (loaded) => {
+      // Sharp at angles and small sizes: full mipmap chain + the GPU's best anisotropy.
+      const aniso = Math.min(16, gl.capabilities.getMaxAnisotropy());
       for (const t of loaded) {
         t.colorSpace = THREE.SRGBColorSpace;
-        t.anisotropy = 8;
+        t.anisotropy = aniso;
+        t.generateMipmaps = true;
+        t.minFilter = THREE.LinearMipmapLinearFilter;
+        t.magFilter = THREE.LinearFilter;
       }
       loaded[2].wrapS = THREE.RepeatWrapping; // strap repeats along its length
     },
@@ -290,21 +321,15 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
     };
   }, [hovered, dragged]);
 
-  // R3F does not deliver pointercancel to objects, and a release can land off the card.
-  // A touch that turns into a page scroll (pointercancel) or any release ends the drag.
-  useEffect(() => {
-    if (!dragged) return;
-    const end = () => setDragged(false);
-    window.addEventListener("pointercancel", end);
-    window.addEventListener("pointerup", end);
-    return () => {
-      window.removeEventListener("pointercancel", end);
-      window.removeEventListener("pointerup", end);
-    };
-  }, [dragged]);
+  // Removes the window listeners that end a drag (see onPointerDown).
+  const stopDragEnd = useRef<(() => void) | null>(null);
+  useEffect(() => () => stopDragEnd.current?.(), []);
 
   useFrame((state, rawDelta) => {
-    const delta = Math.min(rawDelta, 1 / 30); // no overshoot after a pause
+    const delta = Math.min(rawDelta, 1 / 30); // physics smoothing: no overshoot after a pause
+    // Timers and the flip use real time, so they run at the same speed at any frame rate
+    // (iOS Low Power Mode and slow GPUs render far below 60 fps).
+    const real = Math.min(rawDelta, 0.25);
     const { vec, dir, ang, rot, top } = tmp;
     if (
       !fixed.current ||
@@ -349,6 +374,7 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
     curve.points[3].copy(anchor);
     curve.points[4].copy(top.set(anchor.x, anchor.y + 2, anchor.z)); // continue off-screen
     band.current.geometry.setPoints(curve.getPoints(32));
+    band.current.material.lineWidth = LINE_WIDTH * state.camera.zoom;
     // Keep lanyard.png at its true proportions along the strap.
     band.current.material.repeat.set(
       -curve.getLength() / (STRAP_W * STRAP_TEX_ASPECT),
@@ -377,7 +403,7 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
       idle.current = 0;
       pk.phase = "none";
     } else if (pk.phase === "none") {
-      idle.current += delta; // only advances while frames run, so it pauses offscreen/menu/tab hidden
+      idle.current += real; // only advances while frames run, so it pauses offscreen/menu/tab hidden
       if (idle.current >= IDLE_PEEK_AFTER) pk.phase = "out";
     }
     let target = flipped ? Math.PI : 0;
@@ -388,14 +414,14 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
       if (pk.phase === "out" && Math.abs(yaw.current - Math.PI) < 0.05) {
         pk.phase = "hold";
         pk.t = 0;
-      } else if (pk.phase === "hold" && (pk.t += delta) > PEEK_HOLD) {
+      } else if (pk.phase === "hold" && (pk.t += real) > PEEK_HOLD) {
         pk.phase = "back";
       } else if (pk.phase === "back" && Math.abs(yaw.current) < 0.02) {
         pk.phase = "none";
         idle.current = 0;
       }
     }
-    yaw.current = THREE.MathUtils.damp(yaw.current, target, lambda, delta);
+    yaw.current = THREE.MathUtils.damp(yaw.current, target, lambda, real);
     if (face.current) face.current.rotation.y = yaw.current;
 
     if (!readySent.current) {
@@ -433,8 +459,27 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
     const tp = tap.current;
     tp.x = e.nativeEvent.clientX;
     tp.y = e.nativeEvent.clientY;
-    tp.t = performance.now();
+    // Event timestamps, not handler time: a slow frame between the two taps must not
+    // make a quick double-tap look slow.
+    tp.t = e.nativeEvent.timeStamp;
     capture(e, true);
+    // End the drag on release or cancel anywhere. Attached now, not in an effect: iOS can
+    // send pointercancel (the touch became a page scroll) before React re-renders, and R3F
+    // never delivers pointercancel to objects.
+    stopDragEnd.current?.();
+    const id = e.nativeEvent.pointerId;
+    const end = (ev: PointerEvent) => {
+      if (ev.pointerId !== id) return;
+      stopDragEnd.current?.();
+      setDragged(false);
+    };
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    stopDragEnd.current = () => {
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      stopDragEnd.current = null;
+    };
     const t = card.current.translation();
     setDragged(
       new THREE.Vector3().copy(e.point).sub(tmp.vec.set(t.x, t.y, t.z)),
@@ -452,7 +497,7 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
     // A short press that barely moved is a tap; two taps close together flip the card.
     // A drag never counts (it moves), so dragging is unaffected.
     const tp = tap.current;
-    const now = performance.now();
+    const now = e.nativeEvent.timeStamp;
     const { clientX: x, clientY: y } = e.nativeEvent;
     if (
       Math.hypot(x - tp.x, y - tp.y) > TAP_MAX_MOVE ||

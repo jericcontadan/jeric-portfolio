@@ -129,14 +129,14 @@ export function HeroStage({ children }: { children: ReactNode }) {
     // overlap the text on desktop without blocking its links and buttons.
     <div
       ref={gridRef}
-      className="grid items-center gap-14 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[1.2fr_1fr] lg:gap-10"
+      className="grid items-center gap-8 [-webkit-tap-highlight-color:transparent] lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[1.2fr_1fr] lg:gap-10"
     >
       {children}
       <div className="lg:self-stretch">
         <div
           ref={stageRef}
           // Vertical swipes scroll the page; horizontal drags swing the card.
-          className="relative h-[440px] w-full touch-pan-y touch-pinch-zoom md:h-[520px] lg:h-full lg:min-h-[600px]"
+          className="relative h-[min(calc(100svh-4rem),46rem)] min-h-[32rem] w-full touch-pan-y touch-pinch-zoom select-none max-lg:[container-type:size] [-webkit-touch-callout:none] lg:h-full lg:min-h-[600px]"
           // Debug/test hook: static | loading | running | paused
           data-lanyard={
             !showCanvas
@@ -150,14 +150,15 @@ export function HeroStage({ children }: { children: ReactNode }) {
         >
           <StaticCard hidden={!showStatic} flipped={flipped} />
           {showCanvas && (
-            // Mobile/tablet: same box as the stage. Desktop: widened left across the text
+            // Mobile/tablet: the stage widened to the screen edges (past the container padding)
+            // so a swinging card is not clipped. Desktop: widened left across the text
             // column (1.2fr) and the gap (2.5rem), and right to the page edge (past the
             // container's 2rem padding and side margin), so a swinging card is never clipped.
             // 100cqw = the hero section's width (Hero sets @container), which excludes the
             // scrollbar, unlike 100vw.
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 lg:right-[min(-2rem,calc((75rem-100cqw)/2-2rem))] lg:left-[calc(-120%-2.5rem)]"
+              className="pointer-events-none absolute inset-y-0 -right-5 -left-5 md:-right-8 md:-left-8 lg:right-[min(-2rem,calc((75rem-100cqw)/2-2rem))] lg:left-[calc(-120%-2.5rem)]"
             >
               <LanyardBoundary onError={() => setFailed(true)}>
                 <Lanyard
@@ -183,7 +184,7 @@ export function HeroStage({ children }: { children: ReactNode }) {
             onClick={toggleFlip}
             aria-pressed={flipped}
             aria-controls="hero-card-desc"
-            className="absolute bottom-2 left-1/2 z-10 inline-flex min-h-11 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-ink/70 px-4 text-base text-muted backdrop-blur-sm transition-colors hover:border-violet-soft hover:text-fg lg:bottom-8"
+            className="absolute bottom-5 left-1/2 z-10 inline-flex min-h-11 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-ink/70 px-4 text-base text-muted backdrop-blur-sm transition-colors hover:border-violet-soft hover:text-fg lg:bottom-8"
           >
             <svg
               viewBox="0 0 24 24"
@@ -208,11 +209,18 @@ const CARD_FRONT_TEXT =
 const CARD_BACK_TEXT =
   "ID card, back: Let's build something. Open to OJT, internships and freelance projects. Email jericcontadan6@gmail.com. GitHub github.com/jericcontadan. LinkedIn in/jeric-contadan-aa6484452. Website jericcontadan.vercel.app";
 
+const CARD_SIZES = "(min-width: 1024px) 35vh, (min-width: 640px) 360px, 80vw";
+
 /**
- * Still version of the lanyard: a CSS strap using lanyard.png plus the card, placed where
- * the 3D card comes to rest (top ≈ 29%, height ≈ 49% of the stage). Flips with a CSS 3D
- * turn, or instantly under prefers-reduced-motion. Decorative for assistive tech: the
- * visible side is described by #hero-card-desc.
+ * Still version of the lanyard, and the layout source of truth: the 3D scene measures
+ * [data-static-card] and zooms/offsets its camera so the resting 3D card lands exactly here.
+ * - Below lg: the card is ~78% of the width on phones (max 22.5rem on tablets, and never
+ *   so tall that it crowds the strap), with its bottom 5.5rem above the stage bottom.
+ * - lg+: top 29%, height 49% of the stage.
+ * The strap (lanyard.png) and clip hang from the card up to the top of the stage.
+ * Flips with a CSS turn, or instantly under prefers-reduced-motion. The faces swap by
+ * opacity at the half-way point instead of relying on backface-visibility, which WebKit
+ * ignores here. Decorative for assistive tech: #hero-card-desc describes the visible side.
  */
 function StaticCard({
   hidden,
@@ -221,39 +229,48 @@ function StaticCard({
   hidden: boolean;
   flipped: boolean;
 }) {
+  const face =
+    "rounded-md object-cover [transition:opacity_0s_linear_250ms] motion-reduce:[transition:none]";
   return (
     <div
       aria-hidden="true"
-      className={`pointer-events-none absolute inset-0 transition-opacity duration-500 motion-reduce:transition-none ${
+      className={`pointer-events-none absolute inset-0 overflow-hidden transition-opacity duration-500 motion-reduce:transition-none ${
         hidden ? "opacity-0" : "opacity-100"
       }`}
     >
-      {/* Strap: lanyard.png turned vertical, from the top of the stage to the clip */}
-      <div className="absolute top-0 left-1/2 h-[27%] w-[18px] -translate-x-1/2 overflow-hidden md:w-[22px]">
-        <div className="absolute top-0 left-full h-[18px] w-[600px] origin-top-left rotate-90 bg-[url(/lanyard.png)] bg-size-[auto_100%] bg-repeat-x md:h-[22px]" />
-      </div>
-      <div className="absolute top-[26.5%] left-1/2 h-[3%] w-[8%] -translate-x-1/2 rounded-sm bg-[#c9ccd6]" />
-      <div className="absolute top-[29%] left-1/2 aspect-[5/7] h-[49%] -translate-x-1/2 [perspective:1200px]">
-        <div
-          className={`relative h-full w-full transition-transform duration-500 [transform-style:preserve-3d] motion-reduce:transition-none ${
-            flipped ? "[transform:rotateY(180deg)]" : ""
-          }`}
-        >
-          <Image
-            src="/card-static.png"
-            alt=""
-            fill
-            sizes="(min-width: 1024px) 35vh, (min-width: 768px) 190px, 160px"
-            loading="eager"
-            className="rounded-md object-cover shadow-[0_20px_40px_-12px_rgb(0_0_0/0.6)] backface-hidden"
-          />
-          <Image
-            src="/card-back.png"
-            alt=""
-            fill
-            sizes="(min-width: 1024px) 35vh, (min-width: 768px) 190px, 160px"
-            className="rounded-md object-cover backface-hidden [transform:rotateY(180deg)]"
-          />
+      <div
+        data-static-card
+        className="absolute bottom-[5.5rem] left-1/2 aspect-[5/7] w-[min(78vw,22.5rem,calc((100cqh-11.5rem)/1.4))] -translate-x-1/2 [container-type:inline-size] lg:top-[29%] lg:bottom-auto lg:h-[49%] lg:w-auto"
+      >
+        {/* Strap: lanyard.png turned vertical, from the clip up past the top of the stage.
+            Widths match the 3D scene: strap 0.3 and clip 0.32 of a 1.6-wide card. */}
+        <div className="absolute bottom-[calc(100%+7cqw)] left-1/2 h-[200vh] w-[18.75cqw] -translate-x-1/2 overflow-hidden">
+          <div className="absolute top-0 left-full h-[18.75cqw] w-[200vh] origin-top-left rotate-90 bg-[url(/lanyard.png)] bg-size-[auto_100%] bg-repeat-x" />
+        </div>
+        <div className="absolute bottom-[calc(100%+0.6cqw)] left-1/2 h-[7.5cqw] w-[20cqw] -translate-x-1/2 rounded-sm bg-[#c9ccd6]" />
+        <div className="absolute inset-0 [perspective:1200px]">
+          <div
+            className={`relative h-full w-full shadow-[0_20px_40px_-12px_rgb(0_0_0/0.6)] transition-transform duration-500 motion-reduce:transition-none ${
+              flipped ? "[transform:rotateY(180deg)]" : ""
+            }`}
+          >
+            <Image
+              src="/card-static.png"
+              alt=""
+              fill
+              sizes={CARD_SIZES}
+              loading="eager"
+              className={`${face} ${flipped ? "opacity-0" : "opacity-100"}`}
+            />
+            <Image
+              src="/card-back.png"
+              alt=""
+              fill
+              sizes={CARD_SIZES}
+              // Pre-mirrored so it reads correctly once the wrapper has turned 180°.
+              className={`${face} [transform:scaleX(-1)] ${flipped ? "opacity-100" : "opacity-0"}`}
+            />
+          </div>
         </div>
       </div>
     </div>

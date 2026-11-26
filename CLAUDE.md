@@ -26,6 +26,16 @@ A personal portfolio for **Jeric Contadan, Full Stack Developer & UI Designer**.
   Only the *idea* of a lanyard ID card in the hero is shared with other sites.
 - Use the frontend-design skill for aesthetic decisions.
 
+## All devices (required)
+- The site must work well on **every** device class: Android phones (Chrome), iPhones (Safari),
+  iPads and Android tablets in portrait **and** landscape, and desktop.
+- Test every change at 360×780 (Android), 390×844 (iPhone), 768×1024 and 1024×768 (tablet portrait
+  and landscape), and 1280+ (desktop), in both WebKit (Safari) and Chromium. `npm run test:devices`
+  runs this with Playwright and saves screenshots.
+- Use `svh`/`dvh` for screen-height layouts, never bare `100vh`, so Safari's toolbars never cover content.
+- Touch (tap, double-tap, drag, vertical page scroll) must behave the same on iOS and Android.
+- Animations and timers use real elapsed time, never "per frame", because phones often render below 60 fps.
+
 ## Responsive rules (mobile first)
 - Build for a 360px-wide screen first, then 768px, then 1280px+. Test all three.
 - Hero on desktop: text on the left, lanyard on the right.

@@ -140,7 +140,7 @@ export function Header() {
         id="mobile-menu"
         ref={panelRef}
         hidden={!menuOpen}
-        className="fixed inset-x-0 top-16 bottom-0 z-50 overflow-y-auto overscroll-contain bg-ink px-5 pt-6 md:hidden"
+        className="fixed inset-x-0 top-16 bottom-0 z-50 overflow-y-auto overscroll-contain bg-ink px-5 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:hidden"
       >
         <nav aria-label="Mobile">
           <ul className="flex flex-col">
