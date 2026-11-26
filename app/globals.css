@@ -1,26 +1,71 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Design tokens: one navy family, one violet accent, neutral text. */
+@theme {
+  --color-ink: #0a1024; /* page background */
+  --color-panel: #111a35; /* raised surfaces */
+  --color-line: #23305a; /* borders, dividers */
+  --color-fg: #eef0f7; /* primary text */
+  --color-muted: #a3abc4; /* secondary text */
+  --color-violet: #6d4aff; /* fills (white text on it: ~5.2:1) */
+  --color-violet-soft: #a68cff; /* text/links on navy (~7:1) */
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+
+  --container-site: 75rem; /* ~1200px content width */
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html {
+  scroll-behavior: smooth;
+  /* keep anchored headings clear of the sticky header */
+  scroll-padding-top: 5rem;
+  background-color: var(--color-ink);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  overflow-x: clip;
+}
+
+/* Soft navy gradient on its own fixed layer, so scrolling never repaints it. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 85% -10%, rgb(109 74 255 / 0.16), transparent 70%),
+    radial-gradient(50rem 40rem at -10% 40%, rgb(35 48 90 / 0.5), transparent 70%);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+/* Sections (tabindex -1) receive focus programmatically after menu jumps; don't ring them. */
+:focus-visible:not([tabindex="-1"]) {
+  outline: 2px solid var(--color-violet-soft);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: var(--color-violet);
+  color: white;
 }
