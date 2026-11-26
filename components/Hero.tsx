@@ -1,6 +1,6 @@
 import { site } from "@/lib/site";
-import { HeroCard } from "./HeroCard";
 import { GitHubIcon, LinkedInIcon } from "./icons";
+import { HeroStage } from "./lanyard/HeroStage";
 import { Section } from "./Section";
 
 const iconLink =
@@ -8,8 +8,8 @@ const iconLink =
 
 export function Hero() {
   return (
-    <Section id="home" labelledBy="hero-heading" pad="pt-10 pb-20 lg:py-0">
-      <div className="grid items-center gap-14 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[1.2fr_1fr] lg:gap-10">
+    <Section id="home" labelledBy="hero-heading" pad="pt-10 pb-20 lg:py-0" className="@container">
+      <HeroStage>
         <div className="lg:py-24">
           <p className="text-sm font-medium tracking-[0.14em] text-violet-soft">
             FULL STACK DEVELOPER · MANILA
@@ -49,11 +49,7 @@ export function Hero() {
           </div>
         </div>
 
-        {/* Card slot: the 3D lanyard replaces this in Step 2. */}
-        <div className="lg:self-start">
-          <HeroCard />
-        </div>
-      </div>
+      </HeroStage>
     </Section>
   );
 }

@@ -1,0 +1,245 @@
+"use client";
+
+import dynamic from "next/dynamic";
+import Image from "next/image";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
+import { useMenu } from "../MenuContext";
+
+// Client-only, separate chunk: three.js + Rapier (WASM) never load with the page itself.
+const Lanyard = dynamic(() => import("./Lanyard"), { ssr: false });
+
+/** Keeps the static card if WebGL, the chunk, or a texture fails. */
+class LanyardBoundary extends Component<
+  { onError: () => void; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onError();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+function webglAvailable() {
+  try {
+    const c = document.createElement("canvas");
+    return Boolean(c.getContext("webgl2") ?? c.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fixed-size hero stage. Shows the static card immediately (and permanently under
+ * prefers-reduced-motion), then loads the 3D lanyard when the stage is in view and the
+ * browser is idle. The stage size never changes, so the swap causes no layout shift.
+ */
+export function HeroStage({ children }: { children: ReactNode }) {
+  const gridRef = useRef<HTMLDivElement>(null!);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const { menuOpen } = useMenu();
+  const [load, setLoad] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [inView, setInView] = useState(false);
+  const [pageVisible, setPageVisible] = useState(true);
+  const [flipped, setFlipped] = useState(false);
+  const toggleFlip = () => setFlipped((f) => !f);
+  // Only feeds the client-only 3D, so reading it during the first client render is safe.
+  const [reducedMotion, setReducedMotion] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let idleId: number | undefined;
+    let timerId: number | undefined;
+    let scheduled = false;
+
+    const schedule = () => {
+      if (scheduled || reduced.matches || !webglAvailable()) return;
+      scheduled = true;
+      const go = () => setLoad(true);
+      if (typeof window.requestIdleCallback === "function")
+        idleId = window.requestIdleCallback(go, { timeout: 1500 });
+      else timerId = window.setTimeout(go, 300);
+    };
+
+    const io = new IntersectionObserver(([entry]) => {
+      setInView(entry.isIntersecting);
+      if (entry.isIntersecting) schedule();
+    });
+    io.observe(stage);
+
+    // Turning reduced motion on later unloads the 3D; turning it off allows a load.
+    const onMotion = () => {
+      setReducedMotion(reduced.matches);
+      if (reduced.matches) {
+        setLoad(false);
+        setReady(false);
+        scheduled = false;
+      }
+    };
+    reduced.addEventListener("change", onMotion);
+
+    const onVisibility = () =>
+      setPageVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      io.disconnect();
+      reduced.removeEventListener("change", onMotion);
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (idleId !== undefined) window.cancelIdleCallback(idleId);
+      if (timerId !== undefined) window.clearTimeout(timerId);
+    };
+  }, []);
+
+  const active = inView && pageVisible && !menuOpen;
+  const showCanvas = load && !failed;
+  const showStatic = !ready || failed;
+
+  return (
+    // Hero grid. It is also the pointer-event source for the canvas, so the canvas can
+    // overlap the text on desktop without blocking its links and buttons.
+    <div
+      ref={gridRef}
+      className="grid items-center gap-14 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[1.2fr_1fr] lg:gap-10"
+    >
+      {children}
+      <div className="lg:self-stretch">
+        <div
+          ref={stageRef}
+          // Vertical swipes scroll the page; horizontal drags swing the card.
+          className="relative h-[440px] w-full touch-pan-y touch-pinch-zoom md:h-[520px] lg:h-full lg:min-h-[600px]"
+          // Debug/test hook: static | loading | running | paused
+          data-lanyard={
+            !showCanvas
+              ? "static"
+              : !ready
+                ? "loading"
+                : active
+                  ? "running"
+                  : "paused"
+          }
+        >
+          <StaticCard hidden={!showStatic} flipped={flipped} />
+          {showCanvas && (
+            // Mobile/tablet: same box as the stage. Desktop: widened left across the text
+            // column (1.2fr) and the gap (2.5rem), and right to the page edge (past the
+            // container's 2rem padding and side margin), so a swinging card is never clipped.
+            // 100cqw = the hero section's width (Hero sets @container), which excludes the
+            // scrollbar, unlike 100vw.
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 lg:right-[min(-2rem,calc((75rem-100cqw)/2-2rem))] lg:left-[calc(-120%-2.5rem)]"
+            >
+              <LanyardBoundary onError={() => setFailed(true)}>
+                <Lanyard
+                  active={active}
+                  onReady={() => setReady(true)}
+                  eventSource={gridRef}
+                  stage={stageRef}
+                  flipped={flipped}
+                  onFlip={toggleFlip}
+                  idlePeek={!reducedMotion}
+                />
+              </LanyardBoundary>
+            </div>
+          )}
+
+          {/* Screen readers: what the visible side of the card says (announced on flip). */}
+          <p id="hero-card-desc" className="sr-only" aria-live="polite">
+            {flipped ? CARD_BACK_TEXT : CARD_FRONT_TEXT}
+          </p>
+          {/* Keyboard / screen-reader way to flip (pointer users can also double-click or double-tap). */}
+          <button
+            type="button"
+            onClick={toggleFlip}
+            aria-pressed={flipped}
+            aria-controls="hero-card-desc"
+            className="absolute bottom-2 left-1/2 z-10 inline-flex min-h-11 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-ink/70 px-4 text-sm text-muted backdrop-blur-sm transition-colors hover:border-violet-soft hover:text-fg lg:bottom-8"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              aria-hidden="true"
+              className="size-4"
+            >
+              <path d="M4 12a8 8 0 0 1 13.66-5.66L20 8.5M20 4v4.5h-4.5M20 12a8 8 0 0 1-13.66 5.66L4 15.5M4 20v-4.5h4.5" />
+            </svg>
+            Flip card
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const CARD_FRONT_TEXT =
+  "ID card, front: Jeric Contadan, Full Stack Developer. BS Information Systems, Section BSIS-3C, Technological University of the Philippines – Manila. jericcontadan.vercel.app";
+const CARD_BACK_TEXT =
+  "ID card, back: Let's build something. Open to OJT, internships and freelance projects. Email jericcontadan6@gmail.com. GitHub github.com/jericcontadan. LinkedIn in/jeric-contadan-aa6484452. Website jericcontadan.vercel.app";
+
+/**
+ * Still version of the lanyard: a CSS strap using lanyard.png plus the card, placed where
+ * the 3D card comes to rest (top ≈ 29%, height ≈ 49% of the stage). Flips with a CSS 3D
+ * turn, or instantly under prefers-reduced-motion. Decorative for assistive tech: the
+ * visible side is described by #hero-card-desc.
+ */
+function StaticCard({
+  hidden,
+  flipped,
+}: {
+  hidden: boolean;
+  flipped: boolean;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className={`pointer-events-none absolute inset-0 transition-opacity duration-500 motion-reduce:transition-none ${
+        hidden ? "opacity-0" : "opacity-100"
+      }`}
+    >
+      {/* Strap: lanyard.png turned vertical, from the top of the stage to the clip */}
+      <div className="absolute top-0 left-1/2 h-[27%] w-[18px] -translate-x-1/2 overflow-hidden md:w-[22px]">
+        <div className="absolute top-0 left-full h-[18px] w-[600px] origin-top-left rotate-90 bg-[url(/lanyard.png)] bg-size-[auto_100%] bg-repeat-x md:h-[22px]" />
+      </div>
+      <div className="absolute top-[26.5%] left-1/2 h-[3%] w-[8%] -translate-x-1/2 rounded-sm bg-[#c9ccd6]" />
+      <div className="absolute top-[29%] left-1/2 aspect-[5/7] h-[49%] -translate-x-1/2 [perspective:1200px]">
+        <div
+          className={`relative h-full w-full transition-transform duration-500 [transform-style:preserve-3d] motion-reduce:transition-none ${
+            flipped ? "[transform:rotateY(180deg)]" : ""
+          }`}
+        >
+          <Image
+            src="/card-static.png"
+            alt=""
+            fill
+            sizes="(min-width: 1024px) 260px, (min-width: 768px) 190px, 160px"
+            loading="eager"
+            className="rounded-md object-cover shadow-[0_20px_40px_-12px_rgb(0_0_0/0.6)] backface-hidden"
+          />
+          <Image
+            src="/card-back.png"
+            alt=""
+            fill
+            sizes="(min-width: 1024px) 260px, (min-width: 768px) 190px, 160px"
+            className="rounded-md object-cover backface-hidden [transform:rotateY(180deg)]"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
