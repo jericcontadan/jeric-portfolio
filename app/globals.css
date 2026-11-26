@@ -9,6 +9,9 @@
   --color-muted: #a3abc4; /* secondary text */
   --color-violet: #6d4aff; /* fills (white text on it: ~5.2:1) */
   --color-violet-soft: #a68cff; /* text/links on navy (~7:1) */
+  --color-violet-hover: #7c5cff; /* fill hover */
+  --color-violet-bright: #8f73ff; /* gradient start (large display text only) */
+  --color-violet-light: #d9cfff; /* gradient end */
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
@@ -37,16 +40,26 @@ body {
   overflow-x: clip;
 }
 
-/* Soft navy gradient on its own fixed layer, so scrolling never repaints it. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(60rem 40rem at 85% -10%, rgb(109 74 255 / 0.16), transparent 70%),
-    radial-gradient(50rem 40rem at -10% 40%, rgb(35 48 90 / 0.5), transparent 70%);
+/* The soft violet/blue glow is drawn by <Atmosphere> (components/Atmosphere.tsx). */
+
+/* Rotating glow border (StatCard). @property makes the angle animatable; browsers without
+   it simply show the gradient still. */
+@property --glow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes glow-spin {
+  to {
+    --glow-angle: 360deg;
+  }
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 h1,

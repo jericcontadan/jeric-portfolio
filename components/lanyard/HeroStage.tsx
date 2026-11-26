@@ -220,7 +220,9 @@ const CARD_SIZES = "(min-width: 1024px) 35vh, (min-width: 640px) 360px, 80vw";
  * The strap (lanyard.png) and clip hang from the card up to the top of the stage.
  * Flips with a CSS turn, or instantly under prefers-reduced-motion. The faces swap by
  * opacity at the half-way point instead of relying on backface-visibility, which WebKit
- * ignores here. Decorative for assistive tech: #hero-card-desc describes the visible side.
+ * ignores here. The front image is named "Jeric Contadan" for assistive tech (also while the
+ * 3D card is showing, since it stands in for it); #hero-card-desc gives the full text of the
+ * visible side.
  */
 function StaticCard({
   hidden,
@@ -233,7 +235,6 @@ function StaticCard({
     "rounded-md object-cover [transition:opacity_0s_linear_250ms] motion-reduce:[transition:none]";
   return (
     <div
-      aria-hidden="true"
       className={`pointer-events-none absolute inset-0 overflow-hidden transition-opacity duration-500 motion-reduce:transition-none ${
         hidden ? "opacity-0" : "opacity-100"
       }`}
@@ -244,10 +245,10 @@ function StaticCard({
       >
         {/* Strap: lanyard.png turned vertical, from the clip up past the top of the stage.
             Widths match the 3D scene: strap 0.3 and clip 0.32 of a 1.6-wide card. */}
-        <div className="absolute bottom-[calc(100%+7cqw)] left-1/2 h-[200vh] w-[18.75cqw] -translate-x-1/2 overflow-hidden">
+        <div aria-hidden="true" className="absolute bottom-[calc(100%+7cqw)] left-1/2 h-[200vh] w-[18.75cqw] -translate-x-1/2 overflow-hidden">
           <div className="absolute top-0 left-full h-[18.75cqw] w-[200vh] origin-top-left rotate-90 bg-[url(/lanyard.png)] bg-size-[auto_100%] bg-repeat-x" />
         </div>
-        <div className="absolute bottom-[calc(100%+0.6cqw)] left-1/2 h-[7.5cqw] w-[20cqw] -translate-x-1/2 rounded-sm bg-[#c9ccd6]" />
+        <div aria-hidden="true" className="absolute bottom-[calc(100%+0.6cqw)] left-1/2 h-[7.5cqw] w-[20cqw] -translate-x-1/2 rounded-sm bg-[#c9ccd6]" />
         <div className="absolute inset-0 [perspective:1200px]">
           <div
             className={`relative h-full w-full shadow-[0_20px_40px_-12px_rgb(0_0_0/0.6)] transition-transform duration-500 motion-reduce:transition-none ${
@@ -256,7 +257,10 @@ function StaticCard({
           >
             <Image
               src="/card-static.png"
-              alt=""
+              alt="Jeric Contadan"
+              // Names the card for assistive tech, also while the 3D card (aria-hidden) draws it;
+              // hidden while the back is showing.
+              aria-hidden={flipped || undefined}
               fill
               sizes={CARD_SIZES}
               loading="eager"
@@ -265,6 +269,7 @@ function StaticCard({
             <Image
               src="/card-back.png"
               alt=""
+              aria-hidden="true"
               fill
               sizes={CARD_SIZES}
               // Pre-mirrored so it reads correctly once the wrapper has turned 180°.

@@ -1,4 +1,4 @@
-// Cross-device check of the hero lanyard: WebKit (Safari) + Chromium, phones, tablets, desktop.
+// Cross-device check of the hero lanyard, atmosphere, pill nav and stats: WebKit (Safari) + Chromium, phones, tablets, desktop.
 // Usage: node scripts/devices.mjs [baseUrl=http://localhost:3101] [outDir=./.devices]
 // Writes screenshots + results.json to outDir and prints a summary table.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -149,7 +149,9 @@ async function violetCentreX(png, dpr, area) {
 
 /** Is the back showing? The back has a large violet circle at ~30% of the card height. */
 async function backShowing(page, rect, dpr) {
+  await skyVisible(page, false);
   const png = await page.screenshot();
+  await skyVisible(page, true);
   const { data, info } = await sharp(png)
     .extract({
       left: Math.round((rect.x + rect.w * 0.4) * dpr),
@@ -171,6 +173,14 @@ async function backShowing(page, rect, dpr) {
   }
   return { back: violet / n > 0.5, png };
 }
+
+// Meteor tails blended over navy can match the card's violet, so the sky is hidden (not
+// stopped) for the screenshots that measure the card.
+const skyVisible = (page, on) =>
+  page.evaluate((on) => {
+    const s = document.querySelector("[data-atmosphere]");
+    if (s) s.style.visibility = on ? "" : "hidden";
+  }, on);
 
 const state = (page) =>
   page.evaluate(
@@ -253,7 +263,9 @@ async function run(d) {
     buttonVisible: m.button.y + m.button.h <= m.vh,
     strapFromHeader: Math.round(m.stage.y),
   });
+  await skyVisible(page, false);
   const shot = await page.screenshot({ path: `${out}/${d.name}-2-card.png` });
+  await skyVisible(page, true);
   // Search the stage's full width (the canvas can extend past it) and a band around the card.
   const area = {
     x: Math.max(0, m.still.x - m.still.w * 0.5),
@@ -346,7 +358,9 @@ async function run(d) {
       await wait(16);
     }
     const before = await violetCentreX(shot, dpr, area);
+    await skyVisible(page, false);
     const mid = await violetCentreX(await page.screenshot(), dpr, area);
+    await skyVisible(page, true);
     await touchAt("touchEnd");
     r.dragMovedPx = before && mid ? Math.round(before - mid) : null;
     r.dragMovesCard = r.dragMovedPx > 40;
@@ -403,6 +417,88 @@ async function run(d) {
     }
     await wait(250);
   }
+  // Atmosphere (star canvas): running, and paused while the tab is hidden.
+  const sky = () =>
+    page.evaluate(
+      () => document.querySelector("[data-atmosphere]")?.dataset.atmosphere,
+    );
+  const setHidden = (hidden) =>
+    page.evaluate((hidden) => {
+      if (hidden)
+        Object.defineProperty(document, "visibilityState", {
+          configurable: true,
+          get: () => "hidden",
+        });
+      else delete document.visibilityState;
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, hidden);
+  r.atmosphere = await sky();
+  // Sky renderer stats (data-sky = "frames,launched,peak", updated once a second by the
+  // worker): it is drawing, and launching meteors with several in flight at once.
+  const skyStats = () =>
+    page.evaluate(() =>
+      (document.querySelector("[data-atmosphere]")?.dataset.sky ?? "0,0,0")
+        .split(",")
+        .map(Number),
+    );
+  r.skyMode = await page.evaluate(
+    () => document.querySelector("[data-atmosphere]")?.dataset.skyMode,
+  );
+  const s0 = await skyStats();
+  let peak = 0;
+  for (let i = 0; i < 6; i++) {
+    await wait(1000);
+    peak = Math.max(peak, (await skyStats())[2]);
+  }
+  const s1 = await skyStats();
+  r.skyFramesPerSec = +((s1[0] - s0[0]) / 6).toFixed(1);
+  r.meteorsLaunched6s = s1[1] - s0[1];
+  r.meteorsPeak = peak;
+  await setHidden(true);
+  await wait(300);
+  r.atmospherePausedWhenHidden = (await sky()) === "paused";
+  await setHidden(false);
+  await wait(300);
+  r.atmosphereResumes = (await sky()) === "running";
+
+  // Scroll to About: the nav highlights it and the stat cards count up.
+  await page.evaluate(() =>
+    document.getElementById("about").scrollIntoView({ block: "start" }),
+  );
+  await wait(2000);
+  r.navActive = await page.evaluate(
+    () => document.querySelector("[aria-current=location]")?.textContent,
+  );
+  r.statsShown = await page.evaluate(() =>
+    [...document.querySelectorAll("#about [aria-hidden=true]")]
+      .map((e) => e.textContent)
+      .join(","),
+  );
+  r.overflowXAbout = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth,
+  );
+  await page.screenshot({ path: `${out}/${d.name}-5-about.png` });
+
+  // Mobile menu (below md): opens above everything and pauses the sky.
+  if ((d.ctx.viewport.width ?? 1280) < 768) {
+    // A real tap (page.click would first scroll the page, which a finger never does).
+    const t = await page.locator("[aria-controls=mobile-menu]").boundingBox();
+    await page.touchscreen.tap(t.x + t.width / 2, t.y + t.height / 2);
+    await wait(500);
+    r.menuPausesSky = (await sky()) === "paused";
+    r.menuActive = await page.evaluate(
+      () => document.querySelector("#mobile-menu [aria-current=location]")?.textContent,
+    );
+    await page.screenshot({ path: `${out}/${d.name}-6-menu.png` });
+    await page.keyboard.press("Escape");
+    await wait(300);
+    r.menuClosed = await page.evaluate(
+      () => document.getElementById("mobile-menu").hidden,
+    );
+  }
+
   r.errors = errors;
   await browser.close();
   return r;

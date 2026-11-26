@@ -40,7 +40,7 @@ A personal portfolio for **Jeric Contadan, Full Stack Developer & UI Designer**.
 - Build for a 360px-wide screen first, then 768px, then 1280px+. Test all three.
 - Hero on desktop: text on the left, lanyard on the right.
 - Hero on mobile:
-  - Name and intro come first; a smaller lanyard sits below them.
+  - The heading ("Welcome to / My Portfolio") and intro come first; a smaller lanyard sits below them.
   - Normal vertical page scrolling must still work. The 3D canvas must not trap swipes.
 - The mobile menu must render **above** the 3D canvas, and the 3D pauses while the menu is open.
 - Tap targets are at least 44px. Body text is at least 16px.
@@ -64,12 +64,14 @@ A personal portfolio for **Jeric Contadan, Full Stack Developer & UI Designer**.
 Nav order: Home · About · Projects · Experience · Contact
 
 1. **Hero**
-   - Small label: "FULL STACK DEVELOPER · MANILA"
-   - Heading: "Hi, I'm Jeric Contadan"
-   - One line: "I build modern web apps and business systems, from first client meeting to deployment."
-   - Buttons: **View Projects** (primary), **Download CV** (secondary, `/cv.pdf`), and small icon links for GitHub and LinkedIn
+   - Heading, two lines: "Welcome to" (violet → light-violet gradient, soft glow) / "My Portfolio" (white), ~72px desktop
+   - Typing subtitle (light violet, blinking cursor): "Full Stack Developer", "UI Designer", "BSIS Student · TUP Manila"
+   - Paragraph (muted, max ~560px): "I'm Jeric, an Information Systems student who loves turning real business problems into working web apps. …"
+   - Buttons: **View Projects →** (primary, glowing) and **Contact me** (outlined, secondary)
+   - "FIND ME" row: rounded-square icon links for GitHub, LinkedIn and Email
+   - The full name stays in the page title/metadata and is the card's alt text (it's not in the h1)
    - Right side: the lanyard card
-2. **About**: photo, bio, then a stack grid with tech logos, grouped (see Skills)
+2. **About**: photo, bio, **Download CV** (`/cv.pdf`), then a stack grid with tech logos, grouped (see Skills)
 3. **Projects**: one card per project with a screenshot, title, one-line pitch, tech tags, links and the "Team project" role note
 4. **Experience**: Education & Leadership timeline, plus certificates if any
 5. **Contact**: email, GitHub, LinkedIn, and a contact form (Supabase, later phase)

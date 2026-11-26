@@ -32,3 +32,19 @@ export function ArrowUpIcon({ className = "size-4" }: IconProps) {
     </svg>
   );
 }
+
+export function ArrowRightIcon({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+export function SendIcon({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+      <path d="M21 3 10 14M21 3l-7 18-4-7-7-4 18-7Z" />
+    </svg>
+  );
+}

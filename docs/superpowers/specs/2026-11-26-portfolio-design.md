@@ -10,7 +10,7 @@ at the exact final filenames/dimensions, so swapping is a file replace with zero
 
 ## Design decisions (from brainstorm)
 - **Audience:** 1) internship/OJT recruiters (3rd year, grad 2028), 2) small-business freelance clients.
-- **CTAs:** View Projects = primary, Download CV = secondary. **Contact reachable from anywhere**:
+- **CTAs:** View Projects = primary, Contact me = secondary (Download CV lives in About). **Contact reachable from anywhere**:
   slim sticky header with a violet "Contact" pill always visible (desktop + mobile, outside the hamburger).
 - **3D approach (picked B):** keep React Bits Lanyard physics (rapier rope joints) + meshline strap with
   `lanyard.png`, but replace `card.glb` with a code-built card (drei `RoundedBox`, 5:7 aspect) —
@@ -62,6 +62,32 @@ dynamic imports, sitemap/OG conventions). Verify R3F/drei/rapier versions suppor
 - Touch: canvas `touch-action: pan-y`; card drag only on pointerdown hitting the card; vertical swipes scroll page.
 - `prefers-reduced-motion` → never load 3D, show `/card-static.png`.
 - Texture fit: `card-front.png` with `colorSpace = SRGB`, repeat/offset tuned so 1000×1400 maps 1:1 to 5:7 face; strap `RepeatWrapping` so text stays readable.
+
+### Step 2.5 — Atmosphere *(added by Jeric after Step 2)*
+- `components/Atmosphere.tsx` + `components/sky/engine.ts` + `components/sky/sky.worker.ts`: fixed full-page night sky
+  behind all sections, drawn in **one canvas inside a Web Worker** (OffscreenCanvas), so the main thread (3D lanyard)
+  does no per-frame sky work. Three star layers drift upward (far/mid/near cross the sky in 40/25/15 s; 192 stars
+  desktop, 67 phone) and wrap bottom-to-top: far 1.5 px at 50%, mid 2–2.5 px at 80%, near 3–4 px fully white with a
+  soft glow (pre-rendered sprite), ~20% of near stars light violet; a few twinkle. Meteor shower: one every 0.6–1.5 s (phones 1–2.2 s) with
+  occasional bursts, up to 4 (phones 3) in flight, each crossing in 1.2–2 s: glowing 3–4 px head, tail 2–3 px tapering
+  to a point, 180–300 px long (phones 140–220), white → violet → clear, random angle. Soft violet/blue glow is a bitmap drawn once, used as the background image.
+  Paused when the tab is hidden or the mobile menu is open; reduced motion → still stars, no meteors.
+  No OffscreenCanvas (Safari < 16.4) → still stars baked into the background image.
+  - Measured, why it's built this way (lanyard fps): CSS/Web Animations version of this shower: 59 → 47 (GPU, CPU 4×
+    throttled); worker canvas: 59 → 59. Main-thread canvas or live CSS gradients halved it in compositor-less WebKit.
+- Header: floating centered glass pill (sticky h-16 wrapper kept for layout offsets), active section highlighted via
+  `components/useActiveSection.ts` (IntersectionObserver middle band); pill-style mobile menu with tap-to-close backdrop.
+- Hero: first heading line violet→white gradient; label `<TypedRole/> · MANILA` cycles Full Stack Developer / UI Designer / BSIS Student.
+- `components/StatCard.tsx`: count-up number + rotating glow border (`@property --glow-angle`); `StatsRow` shown in About (Projects 5, Certificates 1, Teams Led 2).
+- `npm run test:devices` also checks the sky state, nav highlight, stats, and the mobile menu.
+
+### Step 2.6 — Hero text redesign *(Jeric's call)*
+- h1 "Welcome to" (violet → light-violet gradient + soft glow) / "My Portfolio" (white), 40 → 72px.
+- `<TypedRole/>` subtitle in violet-soft: Full Stack Developer / UI Designer / BSIS Student · TUP Manila.
+- Intro paragraph (max ~560px), buttons View Projects → (primary, glowing) and Contact me (outlined, → `#contact`),
+  "FIND ME" row of rounded-square GitHub / LinkedIn / Email links. Download CV moved to About.
+- The name is no longer in the h1: it stays in the page title, description, Open Graph and author metadata,
+  and the static card image is alt "Jeric Contadan".
 
 ### Step 3 — About
 - `components/About.tsx`: profile photo, bio (from CLAUDE.md), stack grid grouped (Front end, Back end & data, Cloud,
