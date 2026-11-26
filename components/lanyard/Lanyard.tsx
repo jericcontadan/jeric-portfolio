@@ -280,10 +280,28 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
   useEffect(() => {
     if (!hovered) return;
     document.body.style.cursor = dragged ? "grabbing" : "grab";
+    // Desktop: the canvas overlaps the hero text, so stop double-clicks on the card
+    // from selecting words underneath.
+    const noSelect = (e: Event) => e.preventDefault();
+    document.addEventListener("selectstart", noSelect);
     return () => {
       document.body.style.cursor = "";
+      document.removeEventListener("selectstart", noSelect);
     };
   }, [hovered, dragged]);
+
+  // R3F does not deliver pointercancel to objects, and a release can land off the card.
+  // A touch that turns into a page scroll (pointercancel) or any release ends the drag.
+  useEffect(() => {
+    if (!dragged) return;
+    const end = () => setDragged(false);
+    window.addEventListener("pointercancel", end);
+    window.addEventListener("pointerup", end);
+    return () => {
+      window.removeEventListener("pointercancel", end);
+      window.removeEventListener("pointerup", end);
+    };
+  }, [dragged]);
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 1 / 30); // no overshoot after a pause
@@ -404,8 +422,13 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
     }
   };
 
+  /** The press landed on a hero link or button under the (overlapping) canvas. */
+  const onControl = (e: ThreeEvent<PointerEvent>) =>
+    e.nativeEvent.target instanceof Element &&
+    e.nativeEvent.target.closest("a, button") !== null;
+
   const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
-    if (!card.current) return;
+    if (!card.current || onControl(e)) return;
     interacted();
     const tp = tap.current;
     tp.x = e.nativeEvent.clientX;
@@ -424,7 +447,7 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
   const onPointerUp = (e: ThreeEvent<PointerEvent>) => {
     endDrag(e);
     // With pointer capture, R3F can deliver one pointerup twice (capture + hit): count it once.
-    if (lastUp.current === e.nativeEvent) return;
+    if (lastUp.current === e.nativeEvent || onControl(e)) return;
     lastUp.current = e.nativeEvent;
     // A short press that barely moved is a tap; two taps close together flip the card.
     // A drag never counts (it moves), so dragging is unaffected.
@@ -476,8 +499,6 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
             onPointerMove={interacted}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
-            // A touch that turns into a page scroll ends here: no tap, no drag.
-            onPointerCancel={endDrag}
           >
             <group ref={face}>
               <mesh>

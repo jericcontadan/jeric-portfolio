@@ -28,7 +28,10 @@ class LanyardBoundary extends Component<
 function webglAvailable() {
   try {
     const c = document.createElement("canvas");
-    return Boolean(c.getContext("webgl2") ?? c.getContext("webgl"));
+    const gl = c.getContext("webgl2") ?? c.getContext("webgl");
+    // Free the test context right away; the lanyard creates its own.
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+    return Boolean(gl);
   } catch {
     return false;
   }
@@ -64,29 +67,43 @@ export function HeroStage({ children }: { children: ReactNode }) {
     let idleId: number | undefined;
     let timerId: number | undefined;
     let scheduled = false;
+    let visible = false;
+
+    const cancel = () => {
+      if (idleId !== undefined) window.cancelIdleCallback(idleId);
+      if (timerId !== undefined) window.clearTimeout(timerId);
+      idleId = timerId = undefined;
+    };
 
     const schedule = () => {
       if (scheduled || reduced.matches || !webglAvailable()) return;
       scheduled = true;
-      const go = () => setLoad(true);
+      const go = () => {
+        if (!reduced.matches) setLoad(true);
+      };
       if (typeof window.requestIdleCallback === "function")
         idleId = window.requestIdleCallback(go, { timeout: 1500 });
       else timerId = window.setTimeout(go, 300);
     };
 
     const io = new IntersectionObserver(([entry]) => {
-      setInView(entry.isIntersecting);
-      if (entry.isIntersecting) schedule();
+      visible = entry.isIntersecting;
+      setInView(visible);
+      if (visible) schedule();
     });
     io.observe(stage);
 
-    // Turning reduced motion on later unloads the 3D; turning it off allows a load.
+    // Turning reduced motion on unloads the 3D (and cancels a pending load);
+    // turning it off loads it again if the stage is on screen.
     const onMotion = () => {
       setReducedMotion(reduced.matches);
       if (reduced.matches) {
+        cancel();
         setLoad(false);
         setReady(false);
         scheduled = false;
+      } else if (visible) {
+        schedule();
       }
     };
     reduced.addEventListener("change", onMotion);
@@ -99,8 +116,7 @@ export function HeroStage({ children }: { children: ReactNode }) {
       io.disconnect();
       reduced.removeEventListener("change", onMotion);
       document.removeEventListener("visibilitychange", onVisibility);
-      if (idleId !== undefined) window.cancelIdleCallback(idleId);
-      if (timerId !== undefined) window.clearTimeout(timerId);
+      cancel();
     };
   }, []);
 
@@ -167,7 +183,7 @@ export function HeroStage({ children }: { children: ReactNode }) {
             onClick={toggleFlip}
             aria-pressed={flipped}
             aria-controls="hero-card-desc"
-            className="absolute bottom-2 left-1/2 z-10 inline-flex min-h-11 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-ink/70 px-4 text-sm text-muted backdrop-blur-sm transition-colors hover:border-violet-soft hover:text-fg lg:bottom-8"
+            className="absolute bottom-2 left-1/2 z-10 inline-flex min-h-11 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-ink/70 px-4 text-base text-muted backdrop-blur-sm transition-colors hover:border-violet-soft hover:text-fg lg:bottom-8"
           >
             <svg
               viewBox="0 0 24 24"
@@ -227,7 +243,7 @@ function StaticCard({
             src="/card-static.png"
             alt=""
             fill
-            sizes="(min-width: 1024px) 260px, (min-width: 768px) 190px, 160px"
+            sizes="(min-width: 1024px) 35vh, (min-width: 768px) 190px, 160px"
             loading="eager"
             className="rounded-md object-cover shadow-[0_20px_40px_-12px_rgb(0_0_0/0.6)] backface-hidden"
           />
@@ -235,7 +251,7 @@ function StaticCard({
             src="/card-back.png"
             alt=""
             fill
-            sizes="(min-width: 1024px) 260px, (min-width: 768px) 190px, 160px"
+            sizes="(min-width: 1024px) 35vh, (min-width: 768px) 190px, 160px"
             className="rounded-md object-cover backface-hidden [transform:rotateY(180deg)]"
           />
         </div>
