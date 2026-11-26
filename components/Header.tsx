@@ -81,7 +81,11 @@ export function Header() {
 
   return (
     <>
-      <header ref={headerRef} className="sticky top-0 z-50 border-b border-line/60 bg-ink/80 backdrop-blur-md">
+      <header
+        ref={headerRef}
+        // 1px divider as a shadow so the header is exactly h-16 (hero and menu offsets rely on it)
+        className="sticky top-0 z-50 bg-ink/80 shadow-[0_1px_0_0_rgb(35_48_90/0.6)] backdrop-blur-md"
+      >
         <div className="mx-auto flex h-16 w-full max-w-site items-center gap-2 px-5 md:px-8">
           <a
             href="#home"

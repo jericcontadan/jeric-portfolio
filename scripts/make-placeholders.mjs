@@ -3,7 +3,7 @@
 // can prove (in Step 7) that every placeholder has been replaced.
 //
 // Usage: npm run placeholders            (only creates files that are missing)
-//        npm run placeholders -- --force (overwrites existing files)
+//        npm run placeholders -- --force (regenerates placeholders; never touches real files)
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -155,20 +155,29 @@ const assets = {
 const hashFile = join(root, "scripts", "placeholder-hashes.json");
 const hashes = existsSync(hashFile) ? JSON.parse(readFileSync(hashFile, "utf8")) : {};
 
+const sha = (buf) => createHash("sha256").update(buf).digest("hex");
+
 for (const [rel, make] of Object.entries(assets)) {
   const dest = join(pub, rel);
-  if (existsSync(dest) && !force && !hashes[rel]) {
-    console.log(`skip  ${rel} (real file present)`);
-    continue;
-  }
-  if (existsSync(dest) && !force) {
-    console.log(`keep  ${rel}`);
-    continue;
+  if (existsSync(dest)) {
+    // A file is only ever regenerated if it is still the exact placeholder we wrote.
+    // Anything else is left alone, even with --force. Recorded hashes are never dropped here:
+    // check-placeholders decides what counts as replaced (remove an entry by hand once the
+    // real file is in place).
+    const isPlaceholder = hashes[rel] !== undefined && sha(readFileSync(dest)) === hashes[rel];
+    if (!isPlaceholder) {
+      console.log(`skip  ${rel} (not the generated placeholder)`);
+      continue;
+    }
+    if (!force) {
+      console.log(`keep  ${rel}`);
+      continue;
+    }
   }
   mkdirSync(dirname(dest), { recursive: true });
   const buf = await make();
   writeFileSync(dest, buf);
-  hashes[rel] = createHash("sha256").update(buf).digest("hex");
+  hashes[rel] = sha(buf);
   console.log(`write ${rel}`);
 }
 
