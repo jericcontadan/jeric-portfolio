@@ -469,8 +469,13 @@ async function run(d) {
   r.navActive = await page.evaluate(
     () => document.querySelector("[aria-current=location]")?.textContent,
   );
+  // The stats sit below the photo and bio on phones: bring them on screen, let them count.
+  await page.evaluate(() =>
+    document.querySelector("[data-stats]").scrollIntoView({ block: "center" }),
+  );
+  await wait(1800);
   r.statsShown = await page.evaluate(() =>
-    [...document.querySelectorAll("#about [aria-hidden=true]")]
+    [...document.querySelectorAll("[data-stats] [aria-hidden=true]")]
       .map((e) => e.textContent)
       .join(","),
   );
@@ -479,7 +484,109 @@ async function run(d) {
       document.documentElement.scrollWidth -
       document.documentElement.clientWidth,
   );
-  await page.screenshot({ path: `${out}/${d.name}-5-about.png` });
+  await page.locator("#about").screenshot({ path: `${out}/${d.name}-5-about.png` });
+
+  // About photo: cutout loaded with alt text; the reveal circle follows the mouse (desktop) or
+  // a finger dragged sideways (touch), and a vertical swipe over the photo still scrolls.
+  r.aboutPhoto = await page.evaluate(() => {
+    const img = document.querySelector("[data-profile-reveal] img[alt]:not([alt=''])");
+    return img ? { alt: img.alt, loaded: img.naturalWidth > 0 } : null;
+  });
+  await page.evaluate(() => {
+    document.querySelector("[data-profile-reveal]").scrollIntoView({ block: "center" });
+    window.__revealSeen = false;
+    const el = document.querySelector("[data-profile-reveal]");
+    new MutationObserver(() => {
+      if (el.dataset.reveal === "on") window.__revealSeen = true;
+    }).observe(el, { attributes: true, attributeFilter: ["data-reveal"] });
+  });
+  await wait(1200); // lazy reveal image loads
+  const ph = await page.evaluate(() => {
+    const b = document.querySelector("[data-profile-reveal]").getBoundingClientRect();
+    return { x: b.x, y: b.y, w: b.width, h: b.height };
+  });
+  const px = ph.x + ph.w / 2,
+    py = ph.y + ph.h * 0.42; // over the face
+  const revealState = () =>
+    page.evaluate(() => {
+      const el = document.querySelector("[data-profile-reveal]");
+      return { on: el.dataset.reveal, r: el.style.getPropertyValue("--r") };
+    });
+  if (!isTouch) {
+    await page.mouse.move(px - 80, py);
+    await page.mouse.move(px, py, { steps: 8 });
+    await wait(600);
+    r.revealHover = await revealState();
+    await page.screenshot({ path: `${out}/${d.name}-7-about-reveal.png` });
+    await page.mouse.move(5, 5);
+    await wait(600);
+    r.revealHoverOff = await revealState();
+  } else if (cdp) {
+    await touchAt("touchStart", px - 70, py);
+    for (let i = 1; i <= 10; i++) {
+      await touchAt("touchMove", px - 70 + i * 7, py);
+      await wait(16);
+    }
+    await wait(400);
+    r.revealDrag = await revealState();
+    await page.screenshot({ path: `${out}/${d.name}-7-about-reveal.png` });
+    await touchAt("touchEnd");
+    await wait(600);
+    r.revealDragOff = await revealState();
+    const y0 = await page.evaluate(() => scrollY);
+    await touchAt("touchStart", px, py);
+    for (let i = 1; i <= 20; i++) {
+      await touchAt("touchMove", px, py - i * 12.5);
+      await wait(16);
+    }
+    await touchAt("touchEnd");
+    await wait(800);
+    r.photoSwipeScrollPx = Math.round((await page.evaluate(() => scrollY)) - y0);
+  } else {
+    // WebKit touch: Playwright has no touch drag here, so replay the pointer events a finger
+    // dragging sideways produces. A plain tap must NOT show the circle (it waits for a drag).
+    await page.touchscreen.tap(px, py);
+    await wait(400);
+    r.revealOnTap = await page.evaluate(() => window.__revealSeen);
+    r.revealDrag = await page.evaluate(
+      async ({ x, y }) => {
+        const el = document.querySelector("[data-profile-reveal]");
+        const ev = (type, dx, buttons) =>
+          el.dispatchEvent(
+            new PointerEvent(type, {
+              bubbles: true,
+              pointerType: "touch",
+              pointerId: 7,
+              isPrimary: true,
+              buttons,
+              clientX: x + dx,
+              clientY: y,
+            }),
+          );
+        ev("pointerdown", -70, 1);
+        for (let i = 1; i <= 10; i++) {
+          ev("pointermove", -70 + i * 7, 1);
+          await new Promise((r) => setTimeout(r, 16));
+        }
+        await new Promise((r) => setTimeout(r, 400));
+        const s = { on: el.dataset.reveal, r: el.style.getPropertyValue("--r") };
+        ev("pointerup", 0, 0);
+        return s;
+      },
+      { x: px, y: py },
+    );
+  }
+  r.revealSeen = await page.evaluate(() => window.__revealSeen);
+
+  // Reduced motion: only the still cutout (no reveal layer, no hint).
+  if (!isTouch) {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await wait(300);
+    r.reducedMotionPhotoImgs = await page.evaluate(
+      () => document.querySelectorAll("[data-profile-reveal] img").length,
+    );
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+  }
 
   // Mobile menu (below md): opens above everything and pauses the sky.
   if ((d.ctx.viewport.width ?? 1280) < 768) {

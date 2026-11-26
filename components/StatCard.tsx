@@ -69,7 +69,7 @@ export function StatCard({ value, label }: { value: number; label: string }) {
 /** The three About stats: stacked wide cards on phones, a row of three from 640px. */
 export function StatsRow() {
   return (
-    <div className="grid gap-3 sm:grid-cols-3 sm:gap-5 md:max-w-2xl">
+    <div data-stats className="grid gap-3 sm:grid-cols-3 sm:gap-5 md:max-w-2xl">
       {stats.map((s) => (
         <StatCard key={s.label} {...s} />
       ))}

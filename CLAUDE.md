@@ -142,7 +142,9 @@ deployed on Vercel.
 | `card-front.png` | Card face texture (portrait, about 1000×1400 px): photo, name, BSIS-3C, TUP Manila |
 | `lanyard.png` | Strap texture (long horizontal strip): "JERIC CONTADAN • BSIS-3C • TUP MANILA •" repeating |
 | `card-static.png` | Still image of the card, for reduced motion |
-| `profile.jpg` | Photo for the About section |
+| `profile.jpg` | Original square photo (not shown on the page) |
+| `profile-cutout.png` | About photo: transparent-background cutout, 1024×1024 |
+| `profile-reveal.png` | About hover/drag reveal layer, pixel-aligned with the cutout, 1024×1024 |
 | `cv.pdf` | Downloadable CV |
 | `projects/*.png` | One screenshot per project |
 | `certificates/gdg-gtech-summit-2025.jpg` | G-tech Summit 2025 certificate (provided) |
