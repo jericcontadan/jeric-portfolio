@@ -1,6 +1,7 @@
-// Cross-device check of the hero lanyard, atmosphere, pill nav and stats: WebKit (Safari) + Chromium, phones, tablets, desktop.
+// Cross-device check of the hero lanyard, atmosphere, pill nav, About and Projects: WebKit (Safari) + Chromium, phones, tablets, desktop.
 // Usage: node scripts/devices.mjs [baseUrl=http://localhost:3101] [outDir=./.devices]
-// Writes screenshots + results.json to outDir and prints a summary table.
+// Env: ONLY=<name part>, DEVICE_TIMEOUT_MS (default 180000), FAIL_AT=throw|hang (cleanup self-test).
+// Writes screenshots + results.json to outDir, prints one JSON line per device; exits 1 if any device failed.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { chromium, devices, webkit } from "playwright";
 import sharp from "sharp";
@@ -193,11 +194,45 @@ const pressed = (page) =>
       .getAttribute("aria-pressed"),
   );
 
-async function run(d) {
-  const browser = await d.engine.launch();
+// A device that throws or stalls must still close its browser, or the run never exits.
+const PER_DEVICE_MS = Number(process.env.DEVICE_TIMEOUT_MS) || 180_000;
+
+async function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Close the browser, but never wait more than 10 s for it (a stuck close can't hang the run). */
+const closeQuietly = (browser) =>
+  Promise.race([browser.close(), wait(10_000)]).catch(() => {});
+
+/** Runs one device; `r` collects results as they are measured, so a failure keeps what was seen. */
+async function run(d, r) {
+  // Playwright's own launch timeout: on failure there is no orphaned browser left to close.
+  const browser = await d.engine.launch({ timeout: 60_000 });
+  try {
+    await withTimeout(body(browser, d, r), PER_DEVICE_MS, d.name);
+  } finally {
+    await closeQuietly(browser);
+  }
+}
+
+async function body(browser, d, r) {
   const ctx = await browser.newContext(d.ctx);
   const page = await ctx.newPage();
   const errors = [];
+  r.errors = errors;
+  r.problems = []; // failed checks (beyond page errors) that fail the run
   page.on("pageerror", (e) => errors.push(e.message));
   if (process.env.DEBUG)
     page.on(
@@ -207,9 +242,12 @@ async function run(d) {
         console.error(d.name, Math.round(performance.now()), msg.text()),
     );
   const dpr = d.ctx.deviceScaleFactor ?? 1;
-  const r = { device: d.name };
 
   await page.goto(base, { waitUntil: "load" });
+  // Self-test of the cleanup: FAIL_AT=throw fails the device, FAIL_AT=hang stalls it until the
+  // timeout (use with DEVICE_TIMEOUT_MS). Either way its browser must close and the run go on.
+  if (process.env.FAIL_AT === "throw") throw new Error("forced failure (FAIL_AT=throw)");
+  if (process.env.FAIL_AT === "hang") await new Promise(() => {});
   await page.screenshot({ path: `${out}/${d.name}-1-hero.png` });
 
   // Scroll the stage up under the header (phones/tablets; on desktop it already is).
@@ -588,6 +626,63 @@ async function run(d) {
     await page.emulateMedia({ reducedMotion: "no-preference" });
   }
 
+  // Projects: two cards, stacked on phones, side by side from 768px, screenshots loaded.
+  await page.evaluate(() =>
+    document.getElementById("projects").scrollIntoView({ block: "start" }),
+  );
+  await wait(1500);
+  // Lazy images load as they near the screen: wait for both (up to 8 s).
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll("[data-project] img")].every(
+          (i) => i.complete && i.naturalWidth > 0,
+        ),
+      null,
+      { timeout: 8000 },
+    )
+    .catch(() => {});
+  Object.assign(
+    r,
+    await page.evaluate(() => {
+      const cards = [...document.querySelectorAll("[data-project]")];
+      return {
+        projectCards: cards.length,
+        projectCols: new Set(cards.map((c) => Math.round(c.getBoundingClientRect().x))).size,
+        projectImgsLoaded: cards.every((c) => c.querySelector("img")?.naturalWidth > 0),
+        overflowXProjects:
+          document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    }),
+  );
+  const wantCols = d.ctx.viewport.width >= 768 ? 2 : 1;
+  for (const [ok, msg] of [
+    [r.projectCards === 2, `projectCards ${r.projectCards} (want 2)`],
+    [r.projectCols === wantCols, `projectCols ${r.projectCols} (want ${wantCols})`],
+    [r.projectImgsLoaded, "project screenshots not loaded"],
+    [r.overflowXProjects === 0, `overflowXProjects ${r.overflowXProjects}`],
+  ])
+    if (!ok) r.problems.push(msg);
+  await page.locator("#projects").screenshot({ path: `${out}/${d.name}-8-projects.png` });
+  if (!isTouch) {
+    // Hover lifts the card (translate) and adds the glow (box-shadow).
+    const card = page.locator("[data-project]").first();
+    const look = () =>
+      card.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { translate: s.translate, shadow: s.boxShadow };
+      });
+    const before = await look();
+    const b = await card.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await wait(600);
+    const after = await look();
+    r.projectHoverLifts = after.translate !== before.translate;
+    r.projectHoverGlows = after.shadow !== before.shadow;
+    if (!r.projectHoverLifts || !r.projectHoverGlows) r.problems.push("project hover lift/glow missing");
+    await page.locator("#projects").screenshot({ path: `${out}/${d.name}-9-project-hover.png` });
+    await page.mouse.move(5, 5);
+  }
   // Mobile menu (below md): opens above everything and pauses the sky.
   if ((d.ctx.viewport.width ?? 1280) < 768) {
     // A real tap (page.click would first scroll the page, which a finger never does).
@@ -606,18 +701,27 @@ async function run(d) {
     );
   }
 
-  r.errors = errors;
-  await browser.close();
-  return r;
 }
 
 const results = [];
 for (const d of DEVICES.filter((x) => !ONLY || x.name.includes(ONLY))) {
+  const r = { device: d.name };
   try {
-    results.push(await run(d));
+    await run(d, r);
   } catch (e) {
-    results.push({ device: d.name, error: String(e).split("\n")[0] });
+    r.error = String(e).split("\n")[0];
   }
-  console.log(JSON.stringify(results.at(-1)));
+  // Snapshot: after a timeout the abandoned run may still write into `r` until its browser dies.
+  const snap = structuredClone(r);
+  results.push(snap);
+  console.log(JSON.stringify(snap));
 }
 writeFileSync(`${out}/results.json`, JSON.stringify(results, null, 2));
+const failed = results.filter((r) => r.error || r.errors?.length || r.problems?.length);
+console.log(
+  failed.length
+    ? `FAILED: ${failed.map((r) => r.device).join(", ")}`
+    : `OK: ${results.length} device(s)`,
+);
+// Exit explicitly: a browser whose close timed out would otherwise keep Node alive.
+process.exit(failed.length ? 1 : 0);

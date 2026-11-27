@@ -129,13 +129,8 @@ function cvPdf() {
 const png = (s) => sharp(Buffer.from(s)).png().toBuffer();
 const jpg = (s) => sharp(Buffer.from(s)).jpeg({ quality: 82 }).toBuffer();
 
-const projects = [
-  ["jean-rose-pos", "Jean Rose POS &amp; Inventory"],
-  ["lechon-de-jay", "Lechon De Jay website"],
-  ["gunita-kopi-pos", "Gunita Kopi POS"],
-  ["pinoycart-security", "PinoyCart security assessment"],
-  ["portfolio", "This portfolio"],
-];
+// Both project screenshots (jean-rose.png, lechon-de-jay.png) are real now.
+const projects = [];
 
 const assets = {
   "card-front.png": () => png(cardFront()),

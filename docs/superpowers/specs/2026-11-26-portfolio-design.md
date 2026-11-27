@@ -23,7 +23,8 @@ at the exact final filenames/dimensions, so swapping is a file replace with zero
   tracked in `docs/placeholders.md`; `npm run check:placeholders` fails while any remain. *(Jeric's call)*
 - **Palette:** ink `#0A1024`, panel `#111A35`, line `#23305A`, text `#EEF0F7`, muted `#A3ABC4`,
   violet `#6D4AFF` (fills), violet-soft `#A68CFF` (text on navy).
-- Projects order: Jean Rose POS → Lechon De Jay → Gunita Kopi → PinoyCart → This Portfolio (team/real-client work first for recruiters). *(my call)*
+- Projects: only Jean Rose POS → Lechon De Jay (real-client work). Gunita Kopi, PinoyCart and This Portfolio were
+  dropped from Projects; PinoyCart stays as a leadership line in Experience. *(Jeric's call, Step 4)*
 
 ## Non-goals / anti-goals
 - No copied text/images/layouts from other portfolios; no TUP seal/logo.
@@ -78,7 +79,7 @@ dynamic imports, sitemap/OG conventions). Verify R3F/drei/rapier versions suppor
 - Header: floating centered glass pill (sticky h-16 wrapper kept for layout offsets), active section highlighted via
   `components/useActiveSection.ts` (IntersectionObserver middle band); pill-style mobile menu with tap-to-close backdrop.
 - Hero: first heading line violet→white gradient; label `<TypedRole/> · MANILA` cycles Full Stack Developer / UI Designer / BSIS Student.
-- `components/StatCard.tsx`: count-up number + rotating glow border (`@property --glow-angle`); `StatsRow` shown in About (Projects 5, Certificates 1, Teams Led 2).
+- `components/StatCard.tsx`: count-up number + rotating glow border (`@property --glow-angle`); `StatsRow` shown in About (Projects 2, Certificates 1, Teams Led 2).
 - `npm run test:devices` also checks the sky state, nav highlight, stats, and the mobile menu.
 
 ### Step 2.6 — Hero text redesign *(Jeric's call)*
@@ -94,8 +95,12 @@ dynamic imports, sitemap/OG conventions). Verify R3F/drei/rapier versions suppor
   AI development, Design, Workflow) with logos (`simple-icons` SVGs or inline), 2-col mobile → 3/4-col desktop.
 
 ### Step 4 — Projects
-- `data/projects.ts` (typed), `components/ProjectCard.tsx`: screenshot, title, one-line pitch, tech tags, links,
-  role note ("Team project · 5 members · Full Stack Developer", "Project Leader", etc.). 1-col → 2-col grid.
+- `lib/projects.ts` (typed, two projects), `components/Projects.tsx` + `components/ProjectCard.tsx`: screenshot
+  (`next/image`, 16:10), role ("Full Stack Developer, team project of 5" / "Project Leader"), title, one-line pitch,
+  tech tags, GitHub link. Cards lift and glow on hover/focus-within (no lift under reduced motion). 1 col → 2 cols from 768px.
+- `scripts/devices.mjs`: each device runs under a timeout (`DEVICE_TIMEOUT_MS`, default 180 s) and always closes its
+  browser in `finally`, so one failing device can't hang the run; exits 1 if any device failed; `FAIL_AT=throw|hang`
+  self-tests that. Also checks the Projects cards, columns, images and hover.
 
 ### Step 5 — Experience
 - `components/Experience.tsx`: Education & Leadership vertical timeline; Certificates grid with G-tech Summit 2025 thumbnail

@@ -16,7 +16,7 @@ export const nav = [
 
 /** About-section highlights (StatCard). */
 export const stats = [
-  { value: 5, label: "Projects" },
+  { value: 2, label: "Projects" },
   { value: 1, label: "Certificates" },
   { value: 2, label: "Teams Led" },
 ] as const;

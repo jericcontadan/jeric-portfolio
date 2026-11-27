@@ -92,24 +92,18 @@ A full stack point-of-sale and inventory system for a retail beauty-products bus
 sales processing, real-time stock tracking, automated low-stock email alerts through an email API,
 and secure password recovery. It runs on a 12-table relational database, is hosted in the cloud,
 and was delivered in Scrum sprints.
+Tech: Laravel, PHP, Blade, Bootstrap 5, MySQL, Brevo Email API, Microsoft Azure, Figma, Jira (Scrum).
+Image: `/projects/jean-rose.png`
 Link: https://github.com/jericcontadan/Jean-Rose-POS-and-Inventory-Management-System_SAD
 
 **Lechon De Jay: Digital Transformation** (Project Leader)
 Led the project from client interviews to launch: requirements, project charter, business process
 mapping, and a tablet-first company website (menu, contact details, cash and e-wallet payment info).
+Tech: HTML, CSS, JavaScript, GitHub.
+Image: `/projects/lechon-de-jay.png`
 Link: https://github.com/jericcontadan/Lechon-De-Jay-Website
 
-**Gunita Kopi POS System** (team project)
-A cross-platform POS and back office for a coffee shop, usable on Android and iOS. Designed the
-system architecture with DFD (context, Level 0–1) and ERD models.
-
-**PinoyCart Security Assessment** (Team Lead)
-Led a 4-person security audit of an e-commerce platform: asset identification, threat modeling,
-risk rating, and security controls.
-
-**This Portfolio**
-A 3D interactive portfolio built with Next.js, TypeScript, React Three Fiber, and Tailwind, and
-deployed on Vercel.
+Only these two projects are shown. PinoyCart appears in Experience as a leadership line.
 
 ### Skills (stack grid groups)
 - Front end: Next.js, React, TypeScript, Tailwind CSS, Three.js / React Three Fiber, GSAP
@@ -122,7 +116,8 @@ deployed on Vercel.
 ### Education & Leadership
 - BS Information Systems, Technological University of the Philippines – Manila, expected 2028
 - Project Leader: Lechon De Jay system and website
-- Team Lead & Documentation Lead: PinoyCart Security Risk Assessment
+- Team Lead & Documentation Lead: PinoyCart Security Risk Assessment (4-person audit of an
+  e-commerce platform: asset identification, threat modeling, risk rating, security controls)
 
 ### Certificates
 - **Certificate of Participation: G-tech Summit 2025**
@@ -146,7 +141,7 @@ deployed on Vercel.
 | `profile-cutout.png` | About photo: transparent-background cutout, 1024×1024 |
 | `profile-reveal.png` | About hover/drag reveal layer, pixel-aligned with the cutout, 1024×1024 |
 | `cv.pdf` | Downloadable CV |
-| `projects/*.png` | One screenshot per project |
+| `projects/jean-rose.png`, `projects/lechon-de-jay.png` | Project screenshots, 1280×800 (16:10) |
 | `certificates/gdg-gtech-summit-2025.jpg` | G-tech Summit 2025 certificate (provided) |
 | `favicon.ico` | Site icon |
 
