@@ -14,17 +14,39 @@ A personal portfolio for **Jeric Contadan, Full Stack Developer & UI Designer**.
 - Next.js (App Router) + TypeScript
 - Tailwind CSS
 - 3D hero: React Bits "Lanyard" component (React Three Fiber, drei, @react-three/rapier, meshline)
-- Animation: GSAP or Framer Motion, used only for subtle section reveals
+- Animation: CSS transitions and scroll-driven animations, plus the night sky drawn in a Web Worker
+  (`components/sky/`). No animation library is needed. See "Motion (space theme)" below.
 - Contact form (later phase): Supabase table, row-level security ON, visitors can insert only
 - Hosting: Vercel
 
 ## Design rules
 - Dark navy background with a soft gradient, **one** accent color (violet), and white/neutral text.
 - At most 2 fonts, loaded with `next/font`. Content max width about 1200px. Generous spacing.
-- Minimal and professional. Motion supports the content and never distracts.
+- Clean and professional layout. Motion follows the approved space theme (see below).
 - **Original design.** Do not copy text, images or exact layouts from any other portfolio.
   Only the *idea* of a lanyard ID card in the hero is shared with other sites.
 - Use the frontend-design skill for aesthetic decisions.
+
+## Motion (space theme, approved)
+Bold, space-themed motion tied to scrolling is intended. It is not a "subtle reveals only" site.
+- **Warp:** fast scrolling stretches the stars into hyperspace streaks; they snap back to dots
+  when scrolling stops.
+- **Meteor bursts:** each newly active section launches a burst of meteors (5–8, phones 3–4).
+- **Deep-space fly-ins:** section content starts small, tilted back and see-through (blurred on
+  desktop pointer devices only), then zooms into place. It replays every time a section enters.
+- **Background words:** giant outlined section names (ABOUT, PROJECTS, …) at low opacity behind
+  each section, drifting sideways with scroll.
+- **Cards dealt in 3D:** project cards fly in from 3D space, spinning, and land one after another.
+- **Light sweep:** a violet beam crosses each section heading as it appears.
+- **Lanyard swing:** fast scrolls kick the hero card into a swing (capped, with a cooldown).
+
+Rules for all motion:
+- Text must always stay readable. Content is never hidden without JavaScript.
+- Every effect finishes in under ~1 s.
+- Lighter versions on phones.
+- `prefers-reduced-motion`: none of it (no warp, bursts, fly-ins or swing); content just appears.
+- The lanyard frame rate must not drop: no per-frame main-thread work for effects; the sky stays
+  in its worker; prefer transforms and opacity. Check with a before/after fps comparison.
 
 ## All devices (required)
 - The site must work well on **every** device class: Android phones (Chrome), iPhones (Safari),
