@@ -1,4 +1,5 @@
-// Cross-device check of the hero lanyard, atmosphere, pill nav, About and Projects: WebKit (Safari) + Chromium, phones, tablets, desktop.
+// Cross-device check of the hero lanyard, atmosphere (warp, meteor bursts), pill nav, About, Projects
+// and the Shock Motion fly-ins: WebKit (Safari) + Chromium, phones, tablets, desktop.
 // Usage: node scripts/devices.mjs [baseUrl=http://localhost:3101] [outDir=./.devices]
 // Env: ONLY=<name part>, DEVICE_TIMEOUT_MS (default 180000), FAIL_AT=throw|hang (cleanup self-test).
 // Writes screenshots + results.json to outDir, prints one JSON line per device; exits 1 if any device failed.
@@ -273,10 +274,11 @@ async function body(browser, d, r) {
       .filter(
         (e) => e.offsetParent && getComputedStyle(e).visibility !== "hidden",
       )
+      // Layout size (offset*), not the box on screen: sections waiting to fly in are scaled down.
       .map((e) => [
         e.textContent.trim() || e.getAttribute("aria-label"),
-        e.getBoundingClientRect().height,
-        e.getBoundingClientRect().width,
+        e.offsetHeight,
+        e.offsetWidth,
       ])
       .filter(([, h, w]) => h > 0 && (h < 44 || w < 44));
     return {
@@ -499,11 +501,55 @@ async function body(browser, d, r) {
   await wait(300);
   r.atmosphereResumes = (await sky()) === "running";
 
+  // Warp: a fast scroll (~3600 px/s, down one screen and back) stretches the stars; they snap
+  // back to dots once scrolling stops. data-sky[3] = peak warp (0–100) over the last second.
+  // Scrolls at a real-time speed (3600 px/s), however slowly this headless page renders.
+  // Returns the speed actually achieved (px/s).
+  const fastScroll = (dy) =>
+    page.evaluate(async (dy) => {
+      const speed = 3600;
+      const y0 = scrollY;
+      const t0 = performance.now();
+      const dur = (Math.abs(dy) / speed) * 1000;
+      let t = t0;
+      while (t - t0 < dur) {
+        await new Promise((r) => setTimeout(r, 16));
+        t = performance.now();
+        const p = Math.min(1, (t - t0) / dur);
+        window.scrollTo({ top: y0 + dy * p, behavior: "instant" });
+      }
+      return Math.round(Math.abs(scrollY - y0) / ((performance.now() - t0) / 1000));
+    }, dy);
+  const yBefore = await page.evaluate(() => scrollY);
+  let warpPeak = 0;
+  const warpWatch = (async () => {
+    for (let i = 0; i < 8; i++) {
+      await wait(250);
+      warpPeak = Math.max(warpPeak, (await skyStats())[3] ?? 0);
+    }
+  })();
+  r.fastScrollPxPerSec = [await fastScroll(m.vh), await fastScroll(-m.vh)];
+  await warpWatch;
+  await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), yBefore);
+  r.warpPeak = warpPeak;
+  await wait(2200); // two stats updates after scrolling stopped
+  r.warpAfterStop = (await skyStats())[3] ?? null;
+  if (r.skyMode === "worker") {
+    if (!(r.warpPeak > 10)) r.problems.push(`warpPeak ${r.warpPeak} (want > 10)`);
+    if (r.warpAfterStop !== 0) r.problems.push(`warpAfterStop ${r.warpAfterStop} (want 0)`);
+  }
+  const launchedBeforeAbout = (await skyStats())[1];
+
   // Scroll to About: the nav highlights it and the stat cards count up.
   await page.evaluate(() =>
     document.getElementById("about").scrollIntoView({ block: "start" }),
   );
   await wait(2000);
+  // Meteor burst for the newly active section (5–8, phones 3–4), on top of the usual shower.
+  r.meteorsOnSectionChange = (await skyStats())[1] - launchedBeforeAbout;
+  const wantBurst = d.ctx.viewport.width >= 768 ? 5 : 3;
+  if (r.skyMode === "worker" && r.meteorsOnSectionChange < wantBurst)
+    r.problems.push(`meteorsOnSectionChange ${r.meteorsOnSectionChange} (want >= ${wantBurst})`);
   r.navActive = await page.evaluate(
     () => document.querySelector("[aria-current=location]")?.textContent,
   );
@@ -642,6 +688,17 @@ async function body(browser, d, r) {
       { timeout: 8000 },
     )
     .catch(() => {});
+  // Let the dealt cards land first (slow renderers): their x positions include the spin.
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll("[data-deal]")].every(
+          (el) => getComputedStyle(el).transform === "none" && +getComputedStyle(el).opacity === 1,
+        ),
+      null,
+      { timeout: 6000 },
+    )
+    .catch(() => {});
   Object.assign(
     r,
     await page.evaluate(() => {
@@ -683,6 +740,79 @@ async function body(browser, d, r) {
     await page.locator("#projects").screenshot({ path: `${out}/${d.name}-9-project-hover.png` });
     await page.mouse.move(5, 5);
   }
+  // Shock Motion: Projects flew in (opacity 1, no transform), cards dealt, heading swept; the
+  // fly-in replays after the section leaves the screen; background words are faint.
+  const flyState = (sel) =>
+    page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      const s = getComputedStyle(el);
+      return { inview: el.hasAttribute("data-inview"), opacity: +s.opacity, transform: s.transform };
+    }, sel);
+  const landed = (f) => f.inview && f.opacity === 1 && f.transform === "none";
+  r.shockOn = await page.evaluate(() => document.documentElement.hasAttribute("data-shock"));
+  // Self-contained: the element screenshots and hover above can scroll the page.
+  await page.evaluate(() =>
+    document.getElementById("projects").scrollIntoView({ block: "start", behavior: "instant" }),
+  );
+  await page
+    .waitForFunction(
+      () => {
+        const ok = (el) =>
+          getComputedStyle(el).transform === "none" && +getComputedStyle(el).opacity === 1;
+        return (
+          ok(document.querySelector("#projects [data-fly]")) &&
+          [...document.querySelectorAll("[data-deal]")].every(ok)
+        );
+      },
+      null,
+      { timeout: 5000 },
+    )
+    .catch(() => {});
+  r.projectsFly = await flyState("#projects [data-fly]");
+  r.projectsDealt = await page.evaluate(() =>
+    [...document.querySelectorAll("[data-deal]")].every((el) => {
+      const s = getComputedStyle(el);
+      return +s.opacity === 1 && s.transform === "none";
+    }),
+  );
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await wait(400);
+  r.flyResetWhenAway = !(await flyState("#projects [data-fly]")).inview;
+  await page.evaluate(() =>
+    document.getElementById("projects").scrollIntoView({ block: "start", behavior: "instant" }),
+  );
+  // Poll: slow software renderers (a few fps) report the intersection a frame or two late.
+  let replay = await flyState("#projects [data-fly]");
+  for (let i = 0; i < 40 && !replay.inview; i++) {
+    await wait(25);
+    replay = await flyState("#projects [data-fly]");
+  }
+  r.flyReplays = replay.inview && replay.opacity < 1; // mid-animation again
+  await wait(1500);
+  r.projectsFlyAgain = landed(await flyState("#projects [data-fly]"));
+  r.bgWords = await page.evaluate(() =>
+    [...document.querySelectorAll(".bg-word")].map((w) => ({
+      text: w.textContent,
+      opacity: +getComputedStyle(w).opacity,
+      hidden: w.closest("[aria-hidden=true]") !== null,
+    })),
+  );
+  r.overflowXShock = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  for (const [ok, msg] of [
+    [r.shockOn, "html[data-shock] not set"],
+    [landed(r.projectsFly), `projects fly-in not landed ${JSON.stringify(r.projectsFly)}`],
+    [r.projectsDealt, "project cards not dealt"],
+    [r.flyResetWhenAway, "fly-in not reset after leaving the screen"],
+    [r.flyReplays, `fly-in did not replay ${JSON.stringify(replay)}`],
+    [r.projectsFlyAgain, "fly-in replay did not land"],
+    [r.bgWords.length === 4, `bgWords ${r.bgWords.length} (want 4)`],
+    [r.bgWords.every((w) => w.opacity <= 0.08 && w.hidden), "bg words too strong or not aria-hidden"],
+    [r.overflowXShock === 0, `overflowXShock ${r.overflowXShock}`],
+  ])
+    if (!ok) r.problems.push(msg);
+
   // Mobile menu (below md): opens above everything and pauses the sky.
   if ((d.ctx.viewport.width ?? 1280) < 768) {
     // A real tap (page.click would first scroll the page, which a finger never does).
@@ -700,6 +830,62 @@ async function body(browser, d, r) {
       () => document.getElementById("mobile-menu").hidden,
     );
   }
+
+  // Reduced motion: no fly-ins (content simply there), still sky, so no warp or bursts.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await wait(300);
+  await page.evaluate(() =>
+    document.getElementById("experience").scrollIntoView({ block: "start", behavior: "instant" }),
+  );
+  await wait(100);
+  const rm = await page.evaluate(() => {
+    const el = document.querySelector("#experience [data-fly]");
+    const s = getComputedStyle(el);
+    return {
+      shock: document.documentElement.hasAttribute("data-shock"),
+      opacity: +s.opacity,
+      transform: s.transform,
+      sky: document.querySelector("[data-atmosphere]")?.dataset.atmosphere,
+    };
+  });
+  r.reducedMotionShock = rm;
+  if (rm.shock || rm.opacity !== 1 || rm.transform !== "none" || rm.sky !== "static")
+    r.problems.push(`reduced motion still animates ${JSON.stringify(rm)}`);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+
+  // Loading mid-page must not flash: a section shown on screen is never hidden again to fly in.
+  // (Arriving later, e.g. by the smooth scroll to #projects, it may fly in as usual.) Sampled
+  // every frame for 1.5 s after load: a flash is opacity 1 on screen, then below 1 on screen.
+  const noFlash = () =>
+    page.evaluate(
+      () =>
+        new Promise((res) => {
+          const el = document.querySelector("#projects [data-fly]");
+          let shown = false;
+          let flash = false;
+          const t0 = performance.now();
+          const f = () => {
+            const b = el.parentElement.getBoundingClientRect();
+            const onScreen = b.bottom > 0 && b.top < innerHeight;
+            const o = +getComputedStyle(el).opacity;
+            if (onScreen && o === 1) shown = true;
+            else if (onScreen && shown && o < 1) flash = true;
+            if (performance.now() - t0 < 1500) requestAnimationFrame(f);
+            else res({ shock: document.documentElement.hasAttribute("data-shock"), flash });
+          };
+          f();
+        }),
+    );
+  await page.goto(`${base}/#projects`, { waitUntil: "load" });
+  r.hashLoad = await noFlash();
+  await page.evaluate(() =>
+    document.getElementById("projects").scrollIntoView({ block: "start", behavior: "instant" }),
+  );
+  await wait(1500);
+  await page.reload({ waitUntil: "load" });
+  r.reloadMidPage = await noFlash();
+  for (const [k, v] of [["#projects load", r.hashLoad], ["reload mid-page", r.reloadMidPage]])
+    if (!v.shock || v.flash) r.problems.push(`${k}: projects flashed ${JSON.stringify(v)}`);
 
 }
 

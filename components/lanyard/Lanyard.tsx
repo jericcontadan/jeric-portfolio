@@ -30,6 +30,7 @@ import {
   type RefObject,
 } from "react";
 import * as THREE from "three";
+import { getScrollVelocity, holdScrollVelocity } from "@/lib/scrollVelocity";
 
 extend({ MeshLineGeometry, MeshLineMaterial });
 
@@ -97,6 +98,11 @@ const DOUBLE_TAP_MS = 350;
 const DOUBLE_TAP_MAX_GAP = 30; // px between the two taps
 
 const MAX_SPEED = 14; // world units per second; keeps hard flings on screen
+// Fast page scrolls kick the card into a swing (capped, with a cooldown).
+const SCROLL_KICK_FROM = 1200; // px/s of scrolling before the card reacts
+const SCROLL_KICK_FULL = 4000; // px/s for the strongest kick
+const SCROLL_KICK_MAX = 4; // world units per second added, at most
+const SCROLL_KICK_COOLDOWN = 0.5; // s (real time)
 
 export default function Lanyard({
   active,
@@ -254,6 +260,8 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
   const j3 = useRef<RapierRigidBody>(null!);
   const card = useRef<RapierRigidBody>(null!);
   const readySent = useRef(false);
+  const kickCooldown = useRef(0);
+  useEffect(() => holdScrollVelocity(), []);
 
   // Smoothed rope points (stops the strap jittering at low frame rates).
   const [lerped] = useState(() => [new THREE.Vector3(), new THREE.Vector3()]);
@@ -387,6 +395,25 @@ function Band({ onReady, flipped, onFlip, idlePeek }: BandProps) {
     if (!dragged && speed > MAX_SPEED) {
       const k = MAX_SPEED / speed;
       card.current.setLinvel({ x: v.x * k, y: v.y * k, z: v.z * k }, true);
+    }
+
+    // Fast scroll: the card lags behind the page and swings (mostly sideways, a little against
+    // the scroll: scrolling down moves the page up, so the card is pushed down, -y in three.js).
+    kickCooldown.current = Math.max(0, kickCooldown.current - real);
+    const sv = getScrollVelocity();
+    if (!dragged && kickCooldown.current === 0 && Math.abs(sv) > SCROLL_KICK_FROM) {
+      kickCooldown.current = SCROLL_KICK_COOLDOWN;
+      const k = Math.min(
+        1,
+        (Math.abs(sv) - SCROLL_KICK_FROM) / (SCROLL_KICK_FULL - SCROLL_KICK_FROM),
+      );
+      const dv = SCROLL_KICK_MAX * (0.4 + 0.6 * k);
+      const dir = Math.sign(sv);
+      const cur = card.current.linvel();
+      card.current.setLinvel(
+        { x: cur.x + dir * dv, y: cur.y - dir * dv * 0.35, z: cur.z },
+        true,
+      );
     }
 
     // Gently turn the card back to face the camera.

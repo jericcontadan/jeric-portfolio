@@ -1,3 +1,5 @@
+import { BgWord } from "./BgWord";
+
 type SectionProps = {
   id: string;
   title?: string;
@@ -6,6 +8,10 @@ type SectionProps = {
   pad?: string;
   /** id of a heading inside children that names the section (when no `title`). */
   labelledBy?: string;
+  /** Giant outlined word drawn behind the section (decorative). */
+  word?: string;
+  /** Content flies in from deep space when the section enters the screen (default on). */
+  fly?: boolean;
   children?: React.ReactNode;
 };
 
@@ -16,6 +22,8 @@ export function Section({
   className = "",
   pad = "py-20 md:py-28",
   labelledBy,
+  word,
+  fly = true,
   children,
 }: SectionProps) {
   const headingId = title ? `${id}-heading` : labelledBy;
@@ -25,15 +33,23 @@ export function Section({
       id={id}
       tabIndex={-1}
       aria-labelledby={headingId}
-      className={`outline-none ${pad} ${className}`}
+      // overflow-x clip (not a scroll container): fly-in and dealt cards tilt in 3D past the
+      // screen edge mid-flight, which must never cause horizontal scrolling.
+      className={`relative isolate outline-none ${fly ? "fly-clip" : ""} ${pad} ${className}`}
     >
-      <div className="mx-auto w-full max-w-site px-5 md:px-8">
-        {title && (
-          <h2 id={headingId} className="mb-10 text-3xl font-semibold md:text-4xl">
-            {title}
-          </h2>
-        )}
-        {children}
+      {word && <BgWord text={word} />}
+      {/* perspective: the fly-in's tilt (rotateX) reads as depth. */}
+      <div
+        className={`mx-auto w-full max-w-site px-5 md:px-8 ${fly ? "[perspective:1200px]" : ""}`}
+      >
+        <div data-fly={fly ? "" : undefined}>
+          {title && (
+            <h2 id={headingId} className="sweep mb-10 text-3xl font-semibold md:text-4xl">
+              {title}
+            </h2>
+          )}
+          {children}
+        </div>
       </div>
     </section>
   );

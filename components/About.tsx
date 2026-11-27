@@ -10,7 +10,7 @@ import { TechStack } from "./TechStack";
  */
 export function About() {
   return (
-    <Section id="about" labelledBy="about-heading">
+    <Section id="about" labelledBy="about-heading" word="ABOUT">
       <div className="grid items-center gap-12 lg:grid-cols-[5fr_7fr] lg:gap-16">
         <ProfileReveal />
 
@@ -24,7 +24,7 @@ export function About() {
           >
             About me
           </h2>
-          <p className="mt-2 font-display text-4xl leading-[1.1] font-semibold tracking-[-0.02em] text-balance md:text-5xl">
+          <p className="sweep mt-2 font-display text-4xl leading-[1.1] font-semibold tracking-[-0.02em] text-balance md:text-5xl">
             {site.name}
           </p>
           <p className="mt-3 text-lg text-fg/80">{site.role}</p>

@@ -7,7 +7,8 @@
 
 export type SkyState = "running" | "paused" | "static";
 export type SkySize = { w: number; h: number; dpr: number };
-export type SkyStats = { frames: number; launched: number; peak: number };
+/** warpPeak: highest warp (0–100) in the last second. */
+export type SkyStats = { frames: number; launched: number; peak: number; warpPeak: number };
 
 type Canvas2D = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 type Star = {
@@ -16,6 +17,7 @@ type Star = {
   r: number;
   a: number;
   color: string; // "r g b" without alpha
+  rgb: string; // the same as a CSS colour, built once (warp streaks use it every frame)
   twinkle: boolean;
   glow: boolean; // near stars: drawn from a pre-rendered glow sprite
   phase: number;
@@ -75,6 +77,12 @@ const METEORS = {
   phone: { max: 3, gap: [1000, 2200], burst: 0.15, tail: [140, 220] },
 } as const;
 const VIOLET = "166 140 255"; // violet-soft: G 140, so tests never take it for card pixels
+// Warp (hyperspace): scroll speed stretches stars into streaks pointing away from the centre.
+const WARP_FULL = 4000; // px/s of scrolling for full warp
+const WARP_TAU = 0.15; // s: how fast the warp follows the scroll speed (snaps back when it stops)
+const WARP_LEN = { wide: 150, phone: 70 }; // px: longest streak at full warp
+const WARP_DRIFT = { wide: 260, phone: 140 }; // px/s: outward travel of the nearest stars
+const DEPTH = [0.35, 0.65, 1]; // per layer: far stars streak least
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -90,7 +98,9 @@ export function createSky(
   let nextMeteor = 0;
   let last = 0;
   let handle = 0;
-  const stats: SkyStats = { frames: 0, launched: 0, peak: 0 };
+  const stats: SkyStats = { frames: 0, launched: 0, peak: 0, warpPeak: 0 };
+  let warpTarget = 0; // 0..1 from the scroll speed
+  let warp = 0; // smoothed
   let statsAt = 0;
   const minFrame = 1000 / opts.maxFps;
 
@@ -117,21 +127,25 @@ export function createSky(
     const k = phone() ? 0 : 1;
     layers = LAYERS.map((l) => ({
       rise: l.rise,
-      stars: Array.from({ length: l.count[k] }, (_, i) => ({
-        x: Math.random() * size.w,
-        y: Math.random() * size.h,
-        r: rand(l.r[0], l.r[1]),
-        a: rand(l.a[0], l.a[1]),
-        color: l.glow
+      stars: Array.from({ length: l.count[k] }, (_, i) => {
+        const color = l.glow
           ? Math.random() < NEAR_VIOLET_SHARE
             ? NEAR_VIOLET
             : "255 255 255"
-          : TINTS[(Math.random() * TINTS.length) | 0],
-        twinkle: i < l.twinkle[k],
-        glow: l.glow,
-        phase: Math.random() * Math.PI * 2,
-        speed: rand(0.5, 1.4),
-      })),
+          : TINTS[(Math.random() * TINTS.length) | 0];
+        return {
+          x: Math.random() * size.w,
+          y: Math.random() * size.h,
+          r: rand(l.r[0], l.r[1]),
+          a: rand(l.a[0], l.a[1]),
+          color,
+          rgb: `rgb(${color})`,
+          twinkle: i < l.twinkle[k],
+          glow: l.glow,
+          phase: Math.random() * Math.PI * 2,
+          speed: rand(0.5, 1.4),
+        };
+      }),
     }));
   };
 
@@ -141,12 +155,20 @@ export function createSky(
     nextMeteor =
       now + (Math.random() < cfg.burst ? rand(120, 350) : rand(cfg.gap[0], cfg.gap[1]));
     if (meteors.length >= cfg.max) return;
+    spawn(now, Math.random() < 0.6 ? rand(0.25, 1.1) : -1);
+  };
+
+  /**
+   * One meteor heading down and to the left. at: where it starts along the top edge (fraction
+   * of the width), or -1 for somewhere on the right edge.
+   */
+  const spawn = (born: number, at: number) => {
+    const cfg = phone() ? METEORS.phone : METEORS.wide;
     const { w, h } = size;
-    // Start on the top edge (60%) or the right edge, heading down and to the left.
-    const fromTop = Math.random() < 0.6;
+    const fromTop = at >= 0;
     const angle = (rand(145, 165) * Math.PI) / 180; // screen coordinates (y down)
     meteors.push({
-      x: fromTop ? rand(w * 0.25, w * 1.1) : w + 20,
+      x: fromTop ? at * w : w + 20,
       y: fromTop ? -20 : rand(-0.1 * h, h * 0.6),
       ux: Math.cos(angle),
       uy: Math.sin(angle),
@@ -154,7 +176,7 @@ export function createSky(
       len: rand(cfg.tail[0], cfg.tail[1]),
       width: rand(2, 3),
       head: rand(3, 4),
-      born: now,
+      born,
       dur: rand(1200, 2000),
     });
     stats.launched++;
@@ -164,14 +186,52 @@ export function createSky(
   const drawStars = (dt: number, t: number, still: boolean) => {
     if (!ctx) return;
     const { w, h } = size;
-    for (const layer of layers) {
+    const cx = w / 2;
+    const cy = h / 2;
+    const half = Math.hypot(cx, cy) || 1;
+    const wk = still ? 0 : warp;
+    const len = phone() ? WARP_LEN.phone : WARP_LEN.wide;
+    const drift = phone() ? WARP_DRIFT.phone : WARP_DRIFT.wide;
+    ctx.lineCap = "round";
+    layers.forEach((layer, li) => {
       const rise = still ? 0 : (h / layer.rise) * dt;
+      const depth = DEPTH[li] ?? 1;
       for (const s of layer.stars) {
         s.y -= rise;
         if (s.y < -8) {
           // Left the top (glow included): come back in at the bottom, somewhere new.
           s.y += h + 16;
           s.x = Math.random() * w;
+        }
+        if (wk > 0) {
+          // Hyperspace: fly outward from the centre and draw a streak trailing toward it.
+          const dx = s.x - cx;
+          const dy = s.y - cy;
+          const d = Math.hypot(dx, dy) || 1;
+          const ux = dx / d;
+          const uy = dy / d;
+          const out = drift * wk * depth * (0.3 + d / half) * dt;
+          s.x += ux * out;
+          s.y += uy * out;
+          if (s.x < -8 || s.x > w + 8 || s.y < -8 || s.y > h + 8) {
+            // Flew off the edge: reappear anywhere (its streak starts short), so the sky
+            // stays evenly filled once the warp ends.
+            s.x = Math.random() * w;
+            s.y = Math.random() * h;
+          }
+          const l = len * wk * depth * (0.25 + d / half);
+          if (l > s.r) {
+            const tw = s.twinkle ? 0.55 + 0.45 * Math.sin(s.phase + t * s.speed) : 1;
+            ctx.strokeStyle = s.rgb;
+            ctx.globalAlpha = s.a * tw;
+            ctx.lineWidth = s.r * 2;
+            ctx.beginPath();
+            ctx.moveTo(s.x, s.y);
+            ctx.lineTo(s.x - ux * l, s.y - uy * l);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            continue;
+          }
         }
         const tw = s.twinkle && !still ? 0.55 + 0.45 * Math.sin(s.phase + t * s.speed) : 1;
         const sprite = s.glow ? spriteFor(s.color) : null;
@@ -187,7 +247,7 @@ export function createSky(
           ctx.fill();
         }
       }
-    }
+    });
   };
 
   const drawMeteors = (now: number) => {
@@ -195,6 +255,7 @@ export function createSky(
     meteors = meteors.filter((m) => now - m.born < m.dur);
     for (const m of meteors) {
       const p = (now - m.born) / m.dur;
+      if (p < 0) continue; // a burst meteor that hasn't started yet
       // Fade in over the first 10%, out over the last 30%.
       const fade = Math.min(1, p / 0.1) * Math.min(1, (1 - p) / 0.3);
       const hx = m.x + m.ux * m.dist * p;
@@ -246,6 +307,10 @@ export function createSky(
     if (now - last < minFrame - 1) return;
     const dt = last ? Math.min(0.1, (now - last) / 1000) : 0; // clamp after stalls
     last = now;
+    // Warp follows the scroll speed with a short lag, then snaps back to dots.
+    warp += (warpTarget - warp) * (1 - Math.exp(-dt / WARP_TAU));
+    if (warpTarget === 0 && warp < 0.02) warp = 0;
+    stats.warpPeak = Math.max(stats.warpPeak, Math.round(warp * 100));
     if (now >= nextMeteor) launch(now);
     clear();
     drawStars(dt, now / 1000, false);
@@ -255,6 +320,7 @@ export function createSky(
       statsAt = now;
       opts.onStats({ ...stats });
       stats.peak = meteors.length;
+      stats.warpPeak = Math.round(warp * 100);
     }
   };
 
@@ -266,6 +332,7 @@ export function createSky(
   const apply = () => {
     stop();
     if (!size.w) return;
+    warp = 0;
     if (state === "running") {
       last = 0;
       meteors = [];
@@ -310,6 +377,19 @@ export function createSky(
     setState(next: SkyState) {
       state = next;
       apply();
+    },
+    /** Scroll speed in px/s (either direction). Only used while running. */
+    setWarp(pxPerSec: number) {
+      warpTarget = Math.min(1, Math.abs(pxPerSec) / WARP_FULL);
+    },
+    /** A burst of n meteors at once (a new section came into view), spread along the top. */
+    burst(n: number) {
+      if (state !== "running" || !size.w) return;
+      const now = performance.now();
+      for (let i = 0; i < n; i++) {
+        // Even slots across the top (with jitter), launched within ~250 ms of each other.
+        spawn(now + rand(0, 250), 0.2 + ((i + rand(0.1, 0.9)) / n) * 0.95);
+      }
     },
   };
 }

@@ -17,7 +17,13 @@ const socials = [
 
 export function Hero() {
   return (
-    <Section id="home" labelledBy="hero-heading" pad="pt-10 pb-20 lg:py-0" className="@container">
+    <Section
+      id="home"
+      labelledBy="hero-heading"
+      pad="pt-10 pb-20 lg:py-0"
+      className="@container"
+      fly={false}
+    >
       <HeroStage>
         <div className="lg:py-24">
           <h1

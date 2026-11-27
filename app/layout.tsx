@@ -4,6 +4,7 @@ import { Atmosphere } from "@/components/Atmosphere";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import { MenuProvider } from "@/components/MenuContext";
+import { ShockMotion } from "@/components/ShockMotion";
 import "./globals.css";
 
 const inter = Inter({
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-dvh flex-col">
         <MenuProvider>
           <Atmosphere />
+          <ShockMotion />
           <Header />
           <main className="flex-1">{children}</main>
           <Footer />

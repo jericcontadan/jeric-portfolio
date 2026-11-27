@@ -82,3 +82,155 @@ h3 {
   background: var(--color-violet);
   color: white;
 }
+
+/* ---------------------------------------------------------------------------------------------
+   Shock Motion (components/ShockMotion.tsx sets html[data-shock] and [data-fly][data-inview]).
+   Transforms and opacity only (plus a small blur on desktop pointer devices), every effect under
+   ~1 s, lighter on phones. Nothing here hides content without JavaScript or with reduced motion.
+   Layered, so Tailwind utilities on the same elements still win.
+   --------------------------------------------------------------------------------------------- */
+@layer components {
+  /* Sections with a fly-in: the 3D tilt and dealt cards must never widen the page. clip is not
+     a scroll container (so scroll timelines still see the page); hidden is the fallback for
+     browsers without clip (Safari before 16). */
+  .fly-clip {
+    overflow-x: hidden;
+  }
+  @supports (overflow: clip) {
+    .fly-clip {
+      overflow-x: clip;
+    }
+  }
+
+  /* Light sweep: a violet beam crosses the heading as its section appears. */
+  .sweep {
+    position: relative;
+    width: fit-content;
+    max-width: 100%;
+    overflow: clip;
+    padding-block: 0.08em; /* room for descenders inside the clip */
+  }
+
+  /* Giant outlined word behind a section (components/BgWord.tsx). */
+  .bg-word {
+    position: absolute;
+    top: 1.5rem;
+    left: 50%;
+    translate: -50% 0;
+    font-family: var(--font-display);
+    font-size: clamp(5rem, 18vw, 15rem);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    color: transparent;
+    -webkit-text-stroke: 1.5px var(--color-violet-soft);
+    opacity: 0.07;
+  }
+  @media (max-width: 767px) {
+    .bg-word {
+      opacity: 0.05;
+      -webkit-text-stroke-width: 1px;
+    }
+  }
+}
+
+@keyframes sweep {
+  0% {
+    transform: translateX(-130%) skewX(-20deg);
+    opacity: 0;
+  }
+  15%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(330%) skewX(-20deg);
+    opacity: 0;
+  }
+}
+
+@keyframes word-drift {
+  from {
+    transform: translateX(14%);
+  }
+  to {
+    transform: translateX(-14%);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Parallax: the word drifts sideways as its section scrolls by (off the main thread). */
+  @supports (animation-timeline: view()) {
+    .bg-word {
+      animation: word-drift linear both;
+      animation-timeline: view();
+    }
+  }
+
+  /* Sections fly in from deep space: small, tilted back, transparent, then zoom into place. */
+  html[data-shock] [data-fly] {
+    opacity: 0;
+    transform: scale(0.7) rotateX(25deg);
+    transform-origin: 50% 0;
+  }
+  html[data-shock] [data-fly][data-inview] {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition:
+      opacity 0.6s ease-out,
+      transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1),
+      filter 0.7s ease-out;
+  }
+
+  html[data-shock] [data-inview] .sweep::after {
+    content: "";
+    position: absolute;
+    inset: -10% auto -10% 0;
+    width: 35%;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(166 140 255 / 0.5) 40%,
+      rgb(236 230 255 / 0.75) 50%,
+      rgb(166 140 255 / 0.5) 60%,
+      transparent
+    );
+    mix-blend-mode: screen;
+    opacity: 0;
+    animation: sweep 0.8s 0.25s ease-out both;
+  }
+
+  /* Project cards dealt from 3D space: spinning in, landing one after another. */
+  html[data-shock] [data-deal] {
+    opacity: 0;
+    transform: translate3d(0, 80px, -500px) rotateX(20deg) rotateY(-35deg) rotateZ(-10deg);
+  }
+  html[data-shock] [data-inview] [data-deal] {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 0.5s ease-out,
+      transform 0.75s cubic-bezier(0.2, 0.9, 0.25, 1.05);
+    transition-delay: calc(0.15s + var(--i, 0) * 0.15s);
+  }
+
+  /* Phones: a lighter fly-in and deal. */
+  @media (max-width: 767px) {
+    html[data-shock] [data-fly] {
+      transform: scale(0.85) rotateX(12deg);
+    }
+    html[data-shock] [data-deal] {
+      transform: translate3d(0, 50px, -250px) rotateX(10deg) rotateY(-18deg) rotateZ(-5deg);
+    }
+  }
+
+  /* Desktop pointer devices also start blurred (skipped on phones and tablets: blur is costly). */
+  @media (min-width: 1024px) and (hover: hover) {
+    html[data-shock] [data-fly] {
+      filter: blur(6px);
+    }
+  }
+}

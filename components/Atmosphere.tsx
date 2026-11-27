@@ -1,10 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { subscribeScrollVelocity } from "@/lib/scrollVelocity";
+import { nav } from "@/lib/site";
 import { useMenu } from "./MenuContext";
 import { createSky, type SkySize, type SkyState, type SkyStats } from "./sky/engine";
+import { useActiveSection } from "./useActiveSection";
 
-type Sky = { resize(size: SkySize): void; setState(state: SkyState): void; destroy(): void };
+type Sky = {
+  resize(size: SkySize): void;
+  setState(state: SkyState): void;
+  warp(pxPerSec: number): void;
+  burst(n: number): void;
+  destroy(): void;
+};
+
+const sectionIds = nav.map((item) => item.href.slice(1));
+const WARP_STEP = 50; // px/s: smaller changes in scroll speed aren't sent to the worker
 
 const DPR_CAP = 1.5; // star dots and thin meteors don't need more, and it saves fill rate
 
@@ -41,6 +53,8 @@ function startWorkerSky(
     return {
       resize: (next) => w.postMessage({ type: "resize", size: next }),
       setState: (next) => w.postMessage({ type: "state", state: next }),
+      warp: (v) => w.postMessage({ type: "warp", v }),
+      burst: (n) => w.postMessage({ type: "burst", n }),
       destroy: () => w.terminate(),
     };
   } catch {
@@ -100,12 +114,14 @@ function drawGlow(w: number, h: number) {
  * - The soft violet glow is a bitmap drawn once, used as the sky's background image.
  *   Live CSS radial gradients cost the lanyard ~40% fps in WebKit (it repaints whatever lies
  *   under the moving 3D canvas); a plain background image costs nothing per frame.
+ * - Warp: scroll speed stretches the stars into hyperspace streaks (snapping back to dots when
+ *   scrolling stops); each newly active section launches a meteor burst (5–8, phones 3–4).
  * - Fewer stars and meteors on phones. Paused while the tab is hidden or the mobile menu is
  *   open. prefers-reduced-motion: still stars, no drift, twinkle or meteors.
  * - Without OffscreenCanvas (Safari before 16.4), or if the worker fails to load: still stars
  *   baked into the background.
  * - Test hooks: data-atmosphere (state), data-sky-mode (worker | still) and data-sky
- *   (frames, meteors launched, peak meteors in flight; updated once a second).
+ *   (frames, meteors launched, peak meteors in flight, peak warp 0–100; updated once a second).
  */
 export function Atmosphere() {
   const { menuOpen } = useMenu();
@@ -148,7 +164,7 @@ export function Atmosphere() {
       measure(),
       initialState,
       (s) => {
-        if (sky) sky.dataset.sky = `${s.frames},${s.launched},${s.peak}`;
+        if (sky) sky.dataset.sky = `${s.frames},${s.launched},${s.peak},${s.warpPeak}`;
       },
       () => {
         // Worker failed after the canvas was transferred: drop it and repaint as still stars.
@@ -222,6 +238,46 @@ export function Atmosphere() {
   useEffect(() => {
     skyEngine.current?.setState(state);
   }, [state]);
+
+  // Warp: forward the scroll speed while the sky runs (the engine smooths it).
+  useEffect(() => {
+    if (state !== "running") return;
+    let sent = 0;
+    const off = subscribeScrollVelocity((v) => {
+      if (Math.abs(Math.abs(v) - Math.abs(sent)) < WARP_STEP && v !== 0) return;
+      sent = v;
+      skyEngine.current?.warp(v);
+    });
+    return () => {
+      off();
+      skyEngine.current?.warp(0);
+    };
+  }, [state]);
+
+  // Meteor burst each time a new section becomes active (not for the first one on load).
+  // Only after the visitor has interacted: loading at /#projects or with a restored scroll
+  // position also changes the active section, without anyone scrolling.
+  const active = useActiveSection(sectionIds);
+  const lastActive = useRef(active);
+  const interacted = useRef(false);
+  useEffect(() => {
+    const on = () => {
+      interacted.current = true;
+      off();
+    };
+    const events = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+    const off = () => events.forEach((e) => window.removeEventListener(e, on));
+    events.forEach((e) => window.addEventListener(e, on, { passive: true }));
+    return off;
+  }, []);
+  useEffect(() => {
+    if (active === lastActive.current) return;
+    lastActive.current = active;
+    if (state !== "running" || !interacted.current) return;
+    const phone = window.innerWidth < 768;
+    const n = phone ? 3 + Math.round(Math.random()) : 5 + Math.floor(Math.random() * 4);
+    skyEngine.current?.burst(n);
+  }, [active, state]);
 
   return (
     <div
