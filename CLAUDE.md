@@ -33,7 +33,14 @@ Bold, space-themed motion tied to scrolling is intended. It is not a "subtle rev
   when scrolling stops.
 - **Meteor bursts:** each newly active section launches a burst of meteors (5–8, phones 3–4).
 - **Deep-space fly-ins:** section content starts small, tilted back and see-through (blurred on
-  desktop pointer devices only), then zooms into place. It replays every time a section enters.
+  desktop pointer devices only), then zooms into place. It replays every time a section enters
+  from below (scrolling back up, the deep-space exit reverses instead).
+- **Deep-space exit:** content leaving the top of the screen recedes into space: it tilts back,
+  shrinks a little and fades, tied to the scroll position, so scrolling back up brings it forward
+  again. Applies to the hero text and every section; it pivots on the bottom edge, so text stays
+  readable until mostly off screen. CSS scroll-driven animations, with an IntersectionObserver
+  fallback (no per-frame JS). Phones: less tilt, no blur. The lanyard stage only fades; the 3D
+  canvas is never transformed.
 - **Background words:** giant outlined section names (ABOUT, PROJECTS, …) at low opacity behind
   each section, drifting sideways with scroll.
 - **Cards dealt in 3D:** project cards fly in from 3D space, spinning, and land one after another.

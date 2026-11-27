@@ -205,8 +205,10 @@ export function ProfileReveal() {
     const client = { x: 0, y: 0 };
     const aim = () => {
       const b = el.getBoundingClientRect();
-      target.x = client.x - b.left;
-      target.y = client.y - b.top;
+      // Back to the photo's own (untransformed) pixels: while About recedes in the deep-space
+      // exit, its on-screen box is scaled down, but the circle is drawn in layout pixels.
+      target.x = ((client.x - b.left) * el.offsetWidth) / (b.width || 1);
+      target.y = ((client.y - b.top) * el.offsetHeight) / (b.height || 1);
       return client.x >= b.left && client.x <= b.right && client.y >= b.top && client.y <= b.bottom;
     };
     const show = (e: PointerEvent) => {

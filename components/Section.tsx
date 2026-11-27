@@ -38,17 +38,21 @@ export function Section({
       className={`relative isolate outline-none ${fly ? "fly-clip" : ""} ${pad} ${className}`}
     >
       {word && <BgWord text={word} />}
-      {/* perspective: the fly-in's tilt (rotateX) reads as depth. */}
-      <div
-        className={`mx-auto w-full max-w-site px-5 md:px-8 ${fly ? "[perspective:1200px]" : ""}`}
-      >
-        <div data-fly={fly ? "" : undefined}>
-          {title && (
-            <h2 id={headingId} className="sweep mb-10 text-3xl font-semibold md:text-4xl">
-              {title}
-            </h2>
-          )}
-          {children}
+      {/* Deep-space exit (globals.css): this wrapper recedes as the section leaves the top of the
+          screen. Its own element, so it never fights the fly-in on [data-fly] below. */}
+      <div data-exit={fly ? "" : undefined}>
+        {/* perspective: the fly-in's tilt (rotateX) reads as depth. */}
+        <div
+          className={`mx-auto w-full max-w-site px-5 md:px-8 ${fly ? "[perspective:1200px]" : ""}`}
+        >
+          <div data-fly={fly ? "" : undefined}>
+            {title && (
+              <h2 id={headingId} className="sweep mb-10 text-3xl font-semibold md:text-4xl">
+                {title}
+              </h2>
+            )}
+            {children}
+          </div>
         </div>
       </div>
     </section>

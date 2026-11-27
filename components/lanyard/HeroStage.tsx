@@ -132,7 +132,8 @@ export function HeroStage({ children }: { children: ReactNode }) {
       className="grid items-center gap-8 [-webkit-tap-highlight-color:transparent] lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[1.2fr_1fr] lg:gap-10"
     >
       {children}
-      <div className="lg:self-stretch">
+      {/* Deep-space exit, fade only: the 3D canvas is never transformed. */}
+      <div data-exit="fade" className="lg:self-stretch">
         <div
           ref={stageRef}
           // Vertical swipes scroll the page; horizontal drags swing the card.

@@ -233,6 +233,156 @@ async function run(d, r) {
   }
 }
 
+/**
+ * Scrolls so the [data-exit] block `sel` is a fraction q through its exit (0 = about to leave,
+ * 1 = fully above the screen; negative = still fully in place), waits for the scroll-driven
+ * (or fallback) update, and reads its transform scale and opacity. Uses layout positions
+ * (offsetTop), which the exit's own transform doesn't change.
+ */
+async function exitAt(page, sel, q) {
+  await page.evaluate(
+    ([sel, q]) => {
+      const el = document.querySelector(sel);
+      let y = 0;
+      for (let n = el; n; n = n.offsetParent) y += n.offsetTop;
+      const h = el.offsetHeight;
+      window.scrollTo({ top: Math.max(0, y + h - (1 - q) * Math.min(h, innerHeight)), behavior: "instant" });
+    },
+    [sel, q],
+  );
+  const read = () =>
+    page.evaluate((sel) => {
+      const s = getComputedStyle(document.querySelector(sel));
+      const m = s.transform;
+      const mx = m === "none" ? null : new DOMMatrixReadOnly(m);
+      return {
+        // An identity matrix (a scroll-driven animation before its range) counts as "none".
+        t: !mx || mx.isIdentity ? "none" : +mx.a.toFixed(3), // horizontal scale
+        o: +(+s.opacity).toFixed(2),
+      };
+    }, sel);
+  // Settled: the same reading twice, 150 ms apart (the fallback smooths over 0.15 s, and a
+  // software renderer under load can take a while to deliver the next frame). At most ~3 s.
+  await wait(300);
+  let prev = null;
+  for (let i = 0; i < 20; i++) {
+    await wait(150);
+    const cur = await read();
+    if (prev && JSON.stringify(prev) === JSON.stringify(cur)) return cur;
+    prev = cur;
+  }
+  return prev;
+}
+
+/** The deep-space exit's behaviour on one page; failures go to r.problems. */
+async function deepExitChecks(page, d, r, path) {
+  const phone = d.ctx.viewport.width < 768;
+  const res = { path };
+  res.mode = await page.evaluate(() =>
+    "exitFallback" in document.documentElement.dataset ? "fallback" : "native",
+  );
+  const about = "#about [data-exit]";
+  res.rest = await exitAt(page, about, -0.3);
+  res.early = await exitAt(page, about, 0.3);
+  res.late = await exitAt(page, about, 0.85);
+  // Fully above the screen, then back: the block keeps its fly-in state (no replay when scrolled
+  // back into from the top: the exit reversing is what brings it forward).
+  await exitAt(page, about, 1.2);
+  res.keptInview = await page.evaluate(() =>
+    document.querySelector("#about [data-fly]").hasAttribute("data-inview"),
+  );
+  res.back = await exitAt(page, about, -0.3);
+
+  // Jumped past: About (on screen) leaves through the top, the page jumps back to the top (About
+  // never crosses the screen), then About is scrolled into from below: its fly-in plays again.
+  await exitAt(page, about, 1.2);
+  await page.evaluate(() => {
+    window.__flyLog = [];
+    new MutationObserver((ms) => {
+      // Records arrive after the change, so the current state can't tell: log whether the
+      // attribute existed before each change. A replay is a removal followed by an add ("add"
+      // after a prior record); re-setting a present attribute logs only "had".
+      for (const m of ms) window.__flyLog.push(m.oldValue === null ? "add" : "had");
+    }).observe(document.querySelector("#about [data-fly]"), {
+      attributes: true,
+      attributeOldValue: true,
+      attributeFilter: ["data-inview"],
+    });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  });
+  await wait(400);
+  // About's top comes up to 60% down the screen: arriving from below.
+  await page.evaluate(() => {
+    let y = 0;
+    for (let n = document.querySelector("#about [data-exit]"); n; n = n.offsetParent) y += n.offsetTop;
+    window.scrollTo({ top: y - innerHeight * 0.6, behavior: "instant" });
+  });
+  await wait(800);
+  res.replayAfterJump = await page.evaluate(
+    () =>
+      window.__flyLog.join(",").includes("had,add") &&
+      document.querySelector("#about [data-fly]").hasAttribute("data-inview"),
+  );
+
+  // Never seen, scrolled into from the top: About is reset (scrolled below the screen), the page
+  // jumps so it is far above, then scrolls up into it: it appears in place, without a fly-in.
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await wait(400);
+  await exitAt(page, about, 1.6);
+  await page.evaluate(() => {
+    let y = 0;
+    for (let n = document.querySelector("#about [data-exit]"); n; n = n.offsetParent) y += n.offsetTop;
+    const el = document.querySelector("#about [data-exit]");
+    window.scrollTo({ top: y + el.offsetHeight - innerHeight * 0.5, behavior: "instant" });
+  });
+  await wait(250); // well under the fly-in's 0.7 s
+  res.fromTopInstant = await page.evaluate(() => {
+    const el = document.querySelector("#about [data-fly]");
+    return el.hasAttribute("data-inview") && +getComputedStyle(el).opacity === 1;
+  });
+
+  // Hero: the text recedes; the lanyard stage only fades, and nothing around the canvas turns.
+  res.hero = await exitAt(page, "#home [data-exit]:not([data-exit=fade])", 0.85);
+  // The stage itself and everything from it down to the canvas (or, if the 3D hasn't loaded,
+  // to the stage's [data-lanyard] box). canvas: whether the 3D was there to check.
+  res.stage = await page.evaluate(() => {
+    const stage = document.querySelector("[data-exit=fade]");
+    const canvas = stage.querySelector("canvas");
+    const chain = [stage];
+    for (let n = canvas ?? stage.querySelector("[data-lanyard]"); n && n !== stage; n = n.parentElement)
+      chain.push(n);
+    return {
+      canvas: !!canvas,
+      checked: chain.length,
+      untransformed: chain.every((n) => getComputedStyle(n).transform === "none"),
+    };
+  });
+  res.overflowX = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+
+  const tag = `deep exit (${path})`;
+  for (const [ok, msg] of [
+    [res.mode === path, `${tag}: ran the ${res.mode} path`],
+    [res.rest.t === "none" && res.rest.o === 1, `${tag}: moved while in place ${JSON.stringify(res.rest)}`],
+    [res.early.o === 1, `${tag}: faded too early (30% out) ${JSON.stringify(res.early)}`],
+    [res.late.t !== "none" && res.late.t < 1 && res.late.o < 1, `${tag}: no recede at 85% ${JSON.stringify(res.late)}`],
+    // Lighter on phones: shrinks to 0.95 at most (desktop/tablet 0.88).
+    [phone ? res.late.t > 0.94 : res.late.t < 0.93, `${tag}: strength ${res.late.t} on ${phone ? "a phone" : "a large screen"}`],
+    [res.keptInview, `${tag}: fly-in reset when leaving through the top`],
+    [res.back.t === "none" && res.back.o === 1, `${tag}: not restored ${JSON.stringify(res.back)}`],
+    [res.hero.o < 1, `${tag}: hero text did not fade ${JSON.stringify(res.hero)}`],
+    [res.stage.untransformed, `${tag}: lanyard stage, canvas or its wrappers transformed`],
+    [res.replayAfterJump, `${tag}: no fly-in after jumping past About and coming back from below`],
+    [res.fromTopInstant, `${tag}: an unseen section scrolled into from the top flew in`],
+    [res.overflowX === 0, `${tag}: overflowX ${res.overflowX}`],
+  ])
+    if (!ok) r.problems.push(msg);
+  return res;
+}
+
 async function body(browser, d, r) {
   const ctx = await browser.newContext(d.ctx);
   const page = await ctx.newPage();
@@ -1256,6 +1406,28 @@ async function body(browser, d, r) {
   ])
     if (!ok) r.problems.push(msg);
 
+  // Deep-space exit: content leaving the top recedes (tilt, shrink, fade), tied to scrolling.
+  r.deepExit = await deepExitChecks(page, d, r, "native");
+  if (d.name === "desktop-1280x800") {
+    // The fallback path (no scroll timelines, e.g. iOS Safari before 26), forced in Chromium:
+    // the JS check says "unsupported" and the native CSS rules are switched off.
+    const fctx = await browser.newContext(d.ctx);
+    await fctx.addInitScript(() => {
+      const orig = CSS.supports.bind(CSS);
+      CSS.supports = (...a) => (a.join(" ").includes("animation-timeline") ? false : orig(...a));
+      document.addEventListener("DOMContentLoaded", () => {
+        const st = document.createElement("style");
+        st.textContent = "[data-exit]{animation:none!important}";
+        document.head.append(st);
+      });
+    });
+    const fpage = await fctx.newPage();
+    await fpage.goto(base, { waitUntil: "load" });
+    await wait(1000);
+    r.deepExitFallback = await deepExitChecks(fpage, d, r, "fallback");
+    await fctx.close();
+  }
+
   // Mobile menu (below md): opens above everything and pauses the sky.
   if ((d.ctx.viewport.width ?? 1280) < 768) {
     // A real tap (page.click would first scroll the page, which a finger never does).
@@ -1314,6 +1486,10 @@ async function body(browser, d, r) {
     rm.sky !== "static"
   )
     r.problems.push(`reduced motion still animates ${JSON.stringify(rm)}`);
+  // ...and no deep-space exit either: content leaving the top stays as it is.
+  r.reducedMotionExit = await exitAt(page, "#about [data-exit]", 0.85);
+  if (r.reducedMotionExit.t !== "none" || r.reducedMotionExit.o !== 1)
+    r.problems.push(`reduced motion: exit still applied ${JSON.stringify(r.reducedMotionExit)}`);
   await page.emulateMedia({ reducedMotion: "no-preference" });
 
   // Loading mid-page must not flash: a section shown on screen is never hidden again to fly in.

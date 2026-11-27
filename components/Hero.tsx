@@ -25,7 +25,8 @@ export function Hero() {
       fly={false}
     >
       <HeroStage>
-        <div className="lg:py-24">
+        {/* Deep-space exit: the hero text recedes as it leaves the top of the screen. */}
+        <div data-exit="" className="lg:py-24">
           <h1
             id="hero-heading"
             className="text-[clamp(2.5rem,8vw,4.5rem)] leading-[1.05] font-bold"
