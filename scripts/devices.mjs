@@ -1,5 +1,5 @@
 // Cross-device check of the hero lanyard, atmosphere (warp, meteor bursts), pill nav, About, Projects,
-// Experience (certificate lightbox)
+// Experience (certificate lightbox), Contact
 // and the Shock Motion fly-ins: WebKit (Safari) + Chromium, phones, tablets, desktop.
 // Usage: node scripts/devices.mjs [baseUrl=http://localhost:3101] [outDir=./.devices]
 // Env: ONLY=<name part>, DEVICE_TIMEOUT_MS (default 180000), FAIL_AT=throw|hang (cleanup self-test).
@@ -1062,10 +1062,91 @@ async function body(browser, d, r) {
     if (!ok) r.problems.push(msg);
   await page.locator("#experience").screenshot({ path: `${out}/${d.name}-10-experience.png` });
 
+  // Contact: email (mailto + Copy), GitHub and LinkedIn as large links, dealt in; intro beside
+  // the links from 1024px; 44px targets, 16px+ text, no sideways scroll.
+  await page.evaluate(() =>
+    document.getElementById("contact").scrollIntoView({ block: "start", behavior: "instant" }),
+  );
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll("#contact [data-deal]")].every(
+          (el) => getComputedStyle(el).transform === "none" && +getComputedStyle(el).opacity === 1,
+        ),
+      null,
+      { timeout: 6000 },
+    )
+    .catch(() => {});
+  Object.assign(
+    r,
+    await page.evaluate(() => {
+      const c = document.getElementById("contact");
+      const link = (k) => c.querySelector(`[data-contact=${k}]`);
+      const targets = [...c.querySelectorAll("a, button")].map((el) => {
+        const b = el.getBoundingClientRect();
+        return { h: Math.round(b.height), w: Math.round(b.width) };
+      });
+      const smallText = [...c.querySelectorAll("p, a, button, span, h2, h3")].filter(
+        (el) => el.textContent.trim() && el.offsetParent && parseFloat(getComputedStyle(el).fontSize) < 16,
+      ).length;
+      const deal = [...c.querySelectorAll("[data-deal]")];
+      const intro = document.getElementById("contact-heading").getBoundingClientRect();
+      const links = c.querySelector("[data-contact-links]").getBoundingClientRect();
+      return {
+        contactHrefs: ["email", "github", "linkedin"].map((k) => link(k)?.getAttribute("href")),
+        contactExternalRel: ["github", "linkedin"].every((k) =>
+          (link(k)?.rel ?? "").includes("noopener"),
+        ),
+        contactMinTarget: Math.min(...targets.map((t) => Math.min(t.h, t.w))),
+        contactSmallText: smallText,
+        contactDealt:
+          deal.length === 3 &&
+          deal.every((el) => +getComputedStyle(el).opacity === 1 && getComputedStyle(el).transform === "none"),
+        contactIntroBeside: intro.right <= links.left,
+        overflowXContact: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    }),
+  );
+  await page.locator("#contact").screenshot({ path: `${out}/${d.name}-12-contact.png` });
+  // Copy button: Chromium gets clipboard permission; WebKit may take the execCommand fallback.
+  if (d.engine === chromium)
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
+  await page.locator("[data-copy-email]").click();
+  await page
+    .waitForFunction(() => document.querySelector("[data-copy-status]").textContent !== "Copy", null, {
+      timeout: 2000,
+    })
+    .catch(() => {});
+  r.contactCopyStatus = await page.evaluate(
+    () => document.querySelector("[data-copy-status]").textContent,
+  );
+  {
+    const wantHrefs = [
+      "mailto:jericcontadan6@gmail.com",
+      "https://github.com/jericcontadan",
+      "https://www.linkedin.com/in/jeric-contadan-aa6484452/",
+    ];
+    for (const [ok, msg] of [
+      [JSON.stringify(r.contactHrefs) === JSON.stringify(wantHrefs), `contactHrefs ${JSON.stringify(r.contactHrefs)}`],
+      [r.contactExternalRel, "contact external links missing rel=noopener"],
+      [r.contactMinTarget >= 44, `contact tap target ${r.contactMinTarget}px (want >= 44)`],
+      [r.contactSmallText === 0, `contact text under 16px: ${r.contactSmallText}`],
+      [r.contactDealt, "contact cards not dealt"],
+      [
+        r.contactIntroBeside === d.ctx.viewport.width >= 1024,
+        `contactIntroBeside ${r.contactIntroBeside} at ${d.ctx.viewport.width}px`,
+      ],
+      [r.overflowXContact === 0, `overflowXContact ${r.overflowXContact}`],
+      [r.contactCopyStatus === "Copied", `copy email: ${r.contactCopyStatus}`],
+    ])
+      if (!ok) r.problems.push(msg);
+  }
+
   // Mobile menu (below md): opens above everything and pauses the sky.
   if ((d.ctx.viewport.width ?? 1280) < 768) {
     // A real tap (page.click would first scroll the page, which a finger never does).
     const t = await page.locator("[aria-controls=mobile-menu]").boundingBox();
+    const yBeforeMenu = await page.evaluate(() => Math.round(scrollY));
     await page.touchscreen.tap(t.x + t.width / 2, t.y + t.height / 2);
     await wait(500);
     r.menuPausesSky = (await sky()) === "paused";
@@ -1078,6 +1159,9 @@ async function body(browser, d, r) {
     r.menuClosed = await page.evaluate(
       () => document.getElementById("mobile-menu").hidden,
     );
+    // Closing with Esc must leave the page where it was (focus returns to the toggle).
+    r.menuCloseScrollJump = (await page.evaluate(() => Math.round(scrollY))) - yBeforeMenu;
+    if (r.menuCloseScrollJump !== 0) r.problems.push(`menu close moved the page ${r.menuCloseScrollJump}px`);
   }
 
   // Reduced motion: no fly-ins (content simply there), still sky, so no warp or bursts.
@@ -1098,6 +1182,13 @@ async function body(browser, d, r) {
         (c) => +getComputedStyle(c).opacity === 1 && getComputedStyle(c).transform === "none",
       ),
       sky: document.querySelector("[data-atmosphere]")?.dataset.atmosphere,
+      // Diagnostics, for a failure: what is still moving, and why.
+      inview: el.hasAttribute("data-inview"),
+      transition: `${s.transitionProperty} ${s.transitionDuration}`,
+      anims: el.getAnimations().map((a) => `${a.transitionProperty ?? a.animationName}:${a.playState}`),
+      movingCards: [...document.querySelectorAll("#experience [data-deal]")]
+        .filter((c) => getComputedStyle(c).transform !== "none")
+        .map((c) => `${getComputedStyle(c).transition.slice(0, 60)} | ${c.getAnimations().length} anims`),
     };
   });
   r.reducedMotionShock = rm;

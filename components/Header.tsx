@@ -66,7 +66,9 @@ export function Header() {
       document.documentElement.style.overflow = prevOverflow;
       document.removeEventListener("keydown", onKey);
       const target = focusAfterClose.current;
-      if (target === "toggle") toggle?.focus();
+      // preventScroll: focusing the toggle in the sticky header would otherwise scroll the page
+      // (about 400px up on phones) just as the scroll lock is released.
+      if (target === "toggle") toggle?.focus({ preventScroll: true });
       else if (target) document.getElementById(target.slice(1))?.focus({ preventScroll: true });
     };
   }, [menuOpen, setMenuOpen]);
