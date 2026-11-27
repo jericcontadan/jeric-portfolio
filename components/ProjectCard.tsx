@@ -7,7 +7,8 @@ import { GitHubIcon } from "./icons";
  * Hover (pointer devices only: Tailwind's `hover:` needs `(hover: hover)`) and keyboard focus
  * inside it (`:focus-visible`, so a tapped or clicked link doesn't leave the card stuck lifted)
  * lift the card and add a violet glow.
- * Reduced motion keeps the glow, without the lift or the screenshot zoom.
+ * The whole screenshot always shows (object-contain in a 16:10 frame, no hover zoom).
+ * Reduced motion keeps the glow, without the lift.
  */
 export function ProjectCard({ project: p }: { project: Project }) {
   return (
@@ -22,7 +23,7 @@ export function ProjectCard({ project: p }: { project: Project }) {
           alt={p.imageAlt}
           fill
           sizes="(min-width: 1280px) 560px, (min-width: 768px) 50vw, 100vw"
-          className="object-cover object-top transition-transform duration-500 ease-out group-hover:scale-[1.03] motion-reduce:group-hover:scale-100"
+          className="object-contain"
         />
       </div>
 

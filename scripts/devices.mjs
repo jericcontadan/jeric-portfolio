@@ -606,7 +606,27 @@ async function body(browser, d, r) {
       if (el.dataset.reveal === "on") window.__revealSeen = true;
     }).observe(el, { attributes: true, attributeFilter: ["data-reveal"] });
   });
-  await wait(1200); // lazy reveal image loads
+  // The one-time automatic sweep across the face runs (and ends) on its own.
+  // (It may already have run while earlier steps scrolled past About: data-swept records that.)
+  await page
+    .waitForFunction(() => document.querySelector("[data-profile-reveal]").hasAttribute("data-swept"), null, {
+      timeout: 5000,
+    })
+    .catch(() => {});
+  r.revealSwept = await page.evaluate(
+    () => document.querySelector("[data-profile-reveal]").dataset.swept ?? null,
+  );
+  await wait(600); // the circle shrinks away after the sweep
+  r.aboutPhotoFrame = await page.evaluate(() => {
+    const b = document.querySelector("[data-profile-reveal]").getBoundingClientRect();
+    return {
+      w: Math.round(b.width),
+      h: Math.round(b.height),
+      aspect: +(b.width / b.height).toFixed(3),
+      ring: !!document.querySelector("[data-reveal-ring]"),
+      labelOpacity: getComputedStyle(document.querySelector("[data-reveal-label]")).opacity,
+    };
+  });
   const ph = await page.evaluate(() => {
     const b = document.querySelector("[data-profile-reveal]").getBoundingClientRect();
     return { x: b.x, y: b.y, w: b.width, h: b.height };
@@ -683,6 +703,25 @@ async function body(browser, d, r) {
     );
   }
   r.revealSeen = await page.evaluate(() => window.__revealSeen);
+  await wait(600); // label fade
+  r.revealLabelOpacityAfter = await page.evaluate(
+    () => getComputedStyle(document.querySelector("[data-reveal-label]")).opacity,
+  );
+  {
+    const wantR = d.ctx.viewport.width < 640 ? 80 : 110;
+    const active = isTouch ? r.revealDrag : r.revealHover;
+    const rPx = active ? parseFloat(active.r) : NaN;
+    for (const [ok, msg] of [
+      [r.revealSwept === "auto", `auto sweep ended as ${r.revealSwept} (want "auto")`],
+      [Math.abs(r.aboutPhotoFrame.aspect - 853 / 1280) < 0.01, `photo aspect ${r.aboutPhotoFrame.aspect}`],
+      [r.aboutPhotoFrame.ring, "reveal ring missing"],
+      [r.aboutPhotoFrame.labelOpacity === "1", `label before use ${r.aboutPhotoFrame.labelOpacity}`],
+      [!active || (active.on === "on" && Math.abs(rPx - wantR) < 8), `reveal ${JSON.stringify(active)} (want r≈${wantR})`],
+      [r.revealOnTap !== true, "a plain tap showed the reveal"],
+      [r.revealLabelOpacityAfter === "0", `label after use ${r.revealLabelOpacityAfter}`],
+    ])
+      if (!ok) r.problems.push(msg);
+  }
 
   // Reduced motion: only the still cutout (no reveal layer, no hint).
   if (!isTouch) {
@@ -729,6 +768,10 @@ async function body(browser, d, r) {
         projectCards: cards.length,
         projectCols: new Set(cards.map((c) => Math.round(c.getBoundingClientRect().x))).size,
         projectImgsLoaded: cards.every((c) => c.querySelector("img")?.naturalWidth > 0),
+        projectImgsWhole: cards.every((c) => {
+          const i = c.querySelector("img");
+          return i && getComputedStyle(i).objectFit === "contain" && getComputedStyle(i).transform === "none";
+        }),
         overflowXProjects:
           document.documentElement.scrollWidth - document.documentElement.clientWidth,
       };
@@ -739,6 +782,7 @@ async function body(browser, d, r) {
     [r.projectCards === 2, `projectCards ${r.projectCards} (want 2)`],
     [r.projectCols === wantCols, `projectCols ${r.projectCols} (want ${wantCols})`],
     [r.projectImgsLoaded, "project screenshots not loaded"],
+    [r.projectImgsWhole, "project screenshots cropped (want object-fit contain, no zoom)"],
     [r.overflowXProjects === 0, `overflowXProjects ${r.overflowXProjects}`],
   ])
     if (!ok) r.problems.push(msg);

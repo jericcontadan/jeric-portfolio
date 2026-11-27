@@ -166,8 +166,8 @@ Leadership & Roles, in this order:
 | `lanyard.png` | Strap texture (long horizontal strip): "JERIC CONTADAN • BSIS-3C • TUP MANILA •" repeating |
 | `card-static.png` | Still image of the card, for reduced motion |
 | `profile.jpg` | Original square photo (not shown on the page) |
-| `profile-cutout.png` | About photo: transparent-background cutout, 1024×1024 |
-| `profile-reveal.png` | About hover/drag reveal layer, pixel-aligned with the cutout, 1024×1024 |
+| `profile-cutout.png` | About photo: transparent-background portrait cutout, 853×1280 |
+| `profile-reveal.png` | About hover/drag reveal layer, pixel-aligned with the cutout, 853×1280 |
 | `cv.pdf` | Downloadable CV |
 | `projects/jean-rose.png`, `projects/lechon-de-jay.png` | Project screenshots, 1280×800 (16:10) |
 | `certificates/gdg-gtech-summit-2025.jpg` | G-tech Summit 2025 certificate (provided) |
