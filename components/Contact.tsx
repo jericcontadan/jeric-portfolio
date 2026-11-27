@@ -1,5 +1,6 @@
 import { site } from "@/lib/site";
 import { cardClass } from "./cardClass";
+import { ContactForm } from "./ContactForm";
 import { CopyEmailButton } from "./CopyEmailButton";
 import { GitHubIcon, LinkedInIcon, MailIcon } from "./icons";
 import { Section } from "./Section";
@@ -46,8 +47,9 @@ const [emailUser, emailDomain] = site.email.split("@");
 /**
  * Contact: a friendly invitation (left from 1024px) beside the ways to reach out (right). Email
  * is the lead card (large address, mailto link plus a Copy button); GitHub and LinkedIn sit side
- * by side beneath it (stacked at 1024–1279px, where the column is too narrow for two). Cards
- * are dealt in from 3D space like the rest of the site.
+ * by side beneath it (stacked at 1024–1279px, where the column is too narrow for two), then the
+ * message form (ContactForm, saved to Supabase). Cards are dealt in from 3D space like the rest
+ * of the site.
  */
 export function Contact() {
   return (
@@ -72,7 +74,8 @@ export function Contact() {
           </p>
         </div>
 
-        <div className="[perspective:1200px]">
+        {/* Shorter deal step: four cards (links + form) still land in about 1 s. */}
+        <div className="[--deal-step:0.05s] [perspective:1200px]">
           <ul data-contact-links className="grid gap-5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
             {/* Lead card: the email address is the one big thing in this section. */}
             <li data-deal="" style={{ "--i": 0 } as React.CSSProperties} className="sm:col-span-2 lg:col-span-1 xl:col-span-2">
@@ -122,7 +125,10 @@ export function Contact() {
               </li>
             ))}
           </ul>
-          {/* Step 6b: the contact form goes here, below the links in this column. */}
+          {/* The form, dealt in after the three link cards. */}
+          <div data-deal="" style={{ "--i": 3 } as React.CSSProperties} className="mt-5">
+            <ContactForm />
+          </div>
         </div>
       </div>
     </Section>

@@ -2,6 +2,8 @@
 // Experience (certificate lightbox), Contact
 // and the Shock Motion fly-ins: WebKit (Safari) + Chromium, phones, tablets, desktop.
 // Usage: node scripts/devices.mjs [baseUrl=http://localhost:3101] [outDir=./.devices]
+// The contact form needs the mock database: `node scripts/mock-supabase.mjs`, and the site started
+// with SUPABASE_URL=http://localhost:3199 SUPABASE_PUBLISHABLE_KEY=test-key.
 // Env: ONLY=<name part>, DEVICE_TIMEOUT_MS (default 180000), FAIL_AT=throw|hang (cleanup self-test).
 // Writes screenshots + results.json to outDir, prints one JSON line per device; exits 1 if any device failed.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -9,6 +11,8 @@ import { chromium, devices, webkit } from "playwright";
 import sharp from "sharp";
 
 const base = process.argv[2] ?? "http://localhost:3101";
+// The contact form's database stand-in: start the site with SUPABASE_URL pointing here.
+const MOCK_SUPABASE = process.env.MOCK_SUPABASE ?? "http://localhost:3199";
 const out = process.argv[3] ?? ".devices";
 mkdirSync(out, { recursive: true });
 
@@ -618,11 +622,13 @@ async function body(browser, d, r) {
   );
   await wait(600); // the circle shrinks away after the sweep
   r.aboutPhotoFrame = await page.evaluate(() => {
-    const b = document.querySelector("[data-profile-reveal]").getBoundingClientRect();
+    // Layout size (offsetWidth/Height), not the on-screen box: a fly-in still running under load
+    // tilts the section back in 3D, which would squash the measured box.
+    const el = document.querySelector("[data-profile-reveal]");
     return {
-      w: Math.round(b.width),
-      h: Math.round(b.height),
-      aspect: +(b.width / b.height).toFixed(3),
+      w: el.offsetWidth,
+      h: el.offsetHeight,
+      aspect: +(el.offsetWidth / el.offsetHeight).toFixed(3),
       ring: !!document.querySelector("[data-reveal-ring]"),
       labelOpacity: getComputedStyle(document.querySelector("[data-reveal-label]")).opacity,
     };
@@ -1100,7 +1106,7 @@ async function body(browser, d, r) {
         contactMinTarget: Math.min(...targets.map((t) => Math.min(t.h, t.w))),
         contactSmallText: smallText,
         contactDealt:
-          deal.length === 3 &&
+          deal.length === 4 && // email, GitHub, LinkedIn, form
           deal.every((el) => +getComputedStyle(el).opacity === 1 && getComputedStyle(el).transform === "none"),
         contactIntroBeside: intro.right <= links.left,
         overflowXContact: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -1141,6 +1147,114 @@ async function body(browser, d, r) {
     ])
       if (!ok) r.problems.push(msg);
   }
+
+  // Contact form (Supabase via a Server Action; the test server points it at
+  // scripts/mock-supabase.mjs). Fields labelled, 16px+ and 44px+, honeypot hidden from people;
+  // an empty send shows three errors and focuses Name; a valid send shows "Message sent" and
+  // reaches the (mock) database with exactly what was typed.
+  const received = () =>
+    fetch(`${MOCK_SUPABASE}/_received`)
+      .then((res) => res.json())
+      .catch(() => null);
+  const form = page.locator("[data-contact-form]");
+  await form.scrollIntoViewIfNeeded();
+  r.contactForm = await page.evaluate(() => {
+    const f = document.querySelector("[data-contact-form]");
+    const fields = [...f.querySelectorAll("input:not([type=hidden]), textarea")].filter(
+      (el) => el.name !== "hp_x7",
+    );
+    const trap = f.querySelector("[name=hp_x7]");
+    return {
+      fields: fields.map((el) => el.name).join(","),
+      labelled: fields.every((el) => f.querySelector(`label[for="${el.id}"]`)?.textContent.trim()),
+      minFont: Math.min(...fields.map((el) => parseFloat(getComputedStyle(el).fontSize))),
+      minHeight: Math.min(
+        ...[...fields, f.querySelector("button[type=submit]")].map((el) =>
+          Math.round(el.getBoundingClientRect().height),
+        ),
+      ),
+      trapHidden: trap.tabIndex === -1 && !!trap.closest("[aria-hidden=true]") &&
+        trap.getBoundingClientRect().right < 0,
+    };
+  });
+  await form.locator("button[type=submit]").click();
+  await wait(300);
+  r.contactEmptySend = await page.evaluate(() => ({
+    errors: document.querySelectorAll("[data-contact-form] [id$=-error]").length,
+    focus: document.activeElement?.name ?? null,
+  }));
+  await page.locator("[data-contact-form]").screenshot({ path: `${out}/${d.name}-13-contact-form.png` });
+  const sentMsg = `Hello from the ${d.name} device test.`;
+  await page.fill("#contact-name", "Device Test");
+  await page.fill("#contact-email", "device.test@example.com");
+  await page.fill("#contact-message", sentMsg);
+  const before = (await received())?.length ?? null;
+  await form.locator("button[type=submit]").click();
+  r.contactSent = await page
+    .waitForSelector("[data-contact-sent]", { timeout: 10000 })
+    .then(() => true, () => false);
+  if (!r.contactSent)
+    r.contactSendError = await page.evaluate(
+      () => document.querySelector("[data-contact-error]")?.textContent ?? null,
+    );
+  const after = await received();
+  r.contactStored = !!after && after.length === before + 1 &&
+    JSON.stringify(after.at(-1)) ===
+      JSON.stringify({ name: "Device Test", email: "device.test@example.com", message: sentMsg });
+  // React moves focus in an effect, which can run a frame after the panel appears.
+  r.contactSentFocused = await page
+    .waitForFunction(() => document.activeElement?.hasAttribute("data-contact-sent"), null, {
+      timeout: 2000,
+    })
+    .then(() => true, () => false);
+  await page.locator("[data-contact-sent]").screenshot({ path: `${out}/${d.name}-14-contact-sent.png` }).catch(() => {});
+
+  // Desktop only: the database's rate limit shows a clear message, and a bot that fills the
+  // honeypot is told "sent" while nothing is stored.
+  if (!isTouch && r.contactSent) {
+    await page.getByRole("button", { name: "Send another message" }).click();
+    await wait(3300); // the form's minimum fill time restarts
+    await page.fill("#contact-name", "Device Test");
+    await page.fill("#contact-email", "device.test@example.com");
+    await page.fill("#contact-message", "Testing the limit [mock:rate-limit]");
+    await page.locator("[data-contact-form] button[type=submit]").click();
+    r.contactRateLimited = await page
+      .waitForSelector("[data-contact-error]", { timeout: 10000 })
+      .then((el) => el.textContent(), () => null);
+    const n = (await received())?.length;
+    await page.fill("#contact-message", "I am definitely a person, honestly.");
+    await page.evaluate(() => {
+      document.querySelector("[data-contact-form] [name=hp_x7]").value = "Spam Inc";
+    });
+    await page.locator("[data-contact-form] button[type=submit]").click();
+    const botSent = await page
+      .waitForSelector("[data-contact-sent]", { timeout: 10000 })
+      .then(() => true, () => false);
+    r.contactHoneypot = { shownSent: botSent, stored: ((await received())?.length ?? n) - n };
+  }
+  for (const [ok, msg] of [
+    [r.contactForm.fields === "name,email,message", `form fields ${r.contactForm.fields}`],
+    [r.contactForm.labelled, "form fields missing labels"],
+    [r.contactForm.minFont >= 16, `form font ${r.contactForm.minFont}px (want >= 16)`],
+    [r.contactForm.minHeight >= 44, `form control ${r.contactForm.minHeight}px tall (want >= 44)`],
+    [r.contactForm.trapHidden, "honeypot field is reachable or visible"],
+    [
+      r.contactEmptySend.errors === 3 && r.contactEmptySend.focus === "name",
+      `empty send ${JSON.stringify(r.contactEmptySend)}`,
+    ],
+    [r.contactSent, `form not sent: ${r.contactSendError}`],
+    [r.contactStored, "message did not reach the (mock) database intact"],
+    [r.contactSentFocused, "focus did not move to the confirmation"],
+    [
+      isTouch || /Too many messages/.test(r.contactRateLimited ?? ""),
+      `rate limit message: ${r.contactRateLimited}`,
+    ],
+    [
+      isTouch || (r.contactHoneypot?.shownSent && r.contactHoneypot?.stored === 0),
+      `honeypot ${JSON.stringify(r.contactHoneypot)}`,
+    ],
+  ])
+    if (!ok) r.problems.push(msg);
 
   // Mobile menu (below md): opens above everything and pauses the sky.
   if ((d.ctx.viewport.width ?? 1280) < 768) {
