@@ -4,7 +4,7 @@ export type Project = {
   title: string;
   /** One-line pitch. */
   pitch: string;
-  /** Jeric's role, with the team note for team projects. */
+  /** Jeric's role on the project. */
   role: string;
   tags: string[];
   /** 1280×800 (16:10) screenshot in /public. */
@@ -19,7 +19,7 @@ export const projects: Project[] = [
     title: "Jean Rose POS & Inventory Platform",
     pitch:
       "Point of sale and inventory for a beauty-products retailer, with real-time stock tracking and automatic low-stock email alerts.",
-    role: "Full Stack Developer, team project of 5",
+    role: "Lead Full Stack Developer",
     tags: [
       "Laravel",
       "PHP",

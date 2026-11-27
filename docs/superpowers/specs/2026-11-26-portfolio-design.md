@@ -96,15 +96,19 @@ dynamic imports, sitemap/OG conventions). Verify R3F/drei/rapier versions suppor
 
 ### Step 4 — Projects
 - `lib/projects.ts` (typed, two projects), `components/Projects.tsx` + `components/ProjectCard.tsx`: screenshot
-  (`next/image`, 16:10), role ("Full Stack Developer, team project of 5" / "Project Leader"), title, one-line pitch,
+  (`next/image`, 16:10), role ("Lead Full Stack Developer" / "Project Leader", updated in Step 5), title, one-line pitch,
   tech tags, GitHub link. Cards lift and glow on hover/focus-within (no lift under reduced motion). 1 col → 2 cols from 768px.
 - `scripts/devices.mjs`: each device runs under a timeout (`DEVICE_TIMEOUT_MS`, default 180 s) and always closes its
   browser in `finally`, so one failing device can't hang the run; exits 1 if any device failed; `FAIL_AT=throw|hang`
   self-tests that. Also checks the Projects cards, columns, images and hover.
 
 ### Step 5 — Experience
-- `components/Experience.tsx`: Education & Leadership vertical timeline; Certificates grid with G-tech Summit 2025 thumbnail
-  → accessible lightbox (`<dialog>`, Esc/close button, full-size image).
+- `lib/experience.ts` (typed data) + `components/Experience.tsx`: Education card (BSIS-3C, expected 2028), Leadership &
+  roles timeline (Lead Full Stack Developer / Project Leader / Team Lead & Documentation Lead), Certificates column
+  (right from 1024px). All cards dealt in from 3D space (`[data-deal]`), heading swept, EXPERIENCE bg word.
+- `components/CertificateCard.tsx`: G-tech Summit 2025 thumbnail (a link to the image, so it works without JS) →
+  native modal `<dialog>` lightbox, closes with Esc, a tap outside or a 44px close button; full image loads on first open.
+- `npm run test:devices` also checks the Experience cards and the lightbox open/close paths.
 
 ### Step 6 — Contact
 - `components/Contact.tsx`: email (copy + mailto), GitHub, LinkedIn as large cards; form UI (name/email/message) with

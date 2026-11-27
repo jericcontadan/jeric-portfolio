@@ -1,4 +1,5 @@
-// Cross-device check of the hero lanyard, atmosphere (warp, meteor bursts), pill nav, About, Projects
+// Cross-device check of the hero lanyard, atmosphere (warp, meteor bursts), pill nav, About, Projects,
+// Experience (certificate lightbox)
 // and the Shock Motion fly-ins: WebKit (Safari) + Chromium, phones, tablets, desktop.
 // Usage: node scripts/devices.mjs [baseUrl=http://localhost:3101] [outDir=./.devices]
 // Env: ONLY=<name part>, DEVICE_TIMEOUT_MS (default 180000), FAIL_AT=throw|hang (cleanup self-test).
@@ -501,13 +502,19 @@ async function body(browser, d, r) {
   await wait(300);
   r.atmosphereResumes = (await sky()) === "running";
 
-  // Warp: a fast scroll (~3600 px/s, down one screen and back) stretches the stars; they snap
-  // back to dots once scrolling stops. data-sky[3] = peak warp (0–100) over the last second.
+  // Warp: a fast scroll (~3600 px/s, down three screens and back) stretches the stars; they
+  // snap back to dots once scrolling stops. data-sky[3] = peak warp (0–100) over the last second.
   // Scrolls at a real-time speed (3600 px/s), however slowly this headless page renders.
-  // Returns the speed actually achieved (px/s).
+  // Three screens, not one: the headless main thread can run at ~7 fps, and the page's scroll
+  // speed needs at least two scroll events (the first only sets the starting point); one
+  // screen took ~0.2 s, sometimes a single event, so no speed at all.
+  // Returns [speed actually achieved (px/s), scroll events seen].
   const fastScroll = (dy) =>
     page.evaluate(async (dy) => {
       const speed = 3600;
+      let events = 0;
+      const count = () => events++;
+      addEventListener("scroll", count, { passive: true });
       const y0 = scrollY;
       const t0 = performance.now();
       const dur = (Math.abs(dy) / speed) * 1000;
@@ -518,17 +525,32 @@ async function body(browser, d, r) {
         const p = Math.min(1, (t - t0) / dur);
         window.scrollTo({ top: y0 + dy * p, behavior: "instant" });
       }
-      return Math.round(Math.abs(scrollY - y0) / ((performance.now() - t0) / 1000));
+      const pxPerSec = Math.round(Math.abs(scrollY - y0) / ((performance.now() - t0) / 1000));
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); // last event
+      removeEventListener("scroll", count);
+      return [pxPerSec, events];
     }, dy);
   const yBefore = await page.evaluate(() => scrollY);
   let warpPeak = 0;
+  let scrollDoneAt = Infinity;
+  // Sample until 1.5 s after scrolling stops (the stats arrive once a second), at most 40
+  // times: if scrolling throws, the finally below still ends the loop, and the .catch keeps a
+  // closed page from becoming an unhandled rejection that would end the whole run.
   const warpWatch = (async () => {
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 40 && Date.now() < scrollDoneAt + 1500; i++) {
       await wait(250);
       warpPeak = Math.max(warpPeak, (await skyStats())[3] ?? 0);
     }
-  })();
-  r.fastScrollPxPerSec = [await fastScroll(m.vh), await fastScroll(-m.vh)];
+  })().catch(() => {});
+  let down, up;
+  try {
+    down = await fastScroll(3 * m.vh);
+    up = await fastScroll(-3 * m.vh);
+  } finally {
+    scrollDoneAt = Date.now();
+  }
+  r.fastScrollPxPerSec = [down[0], up[0]];
+  r.fastScrollEvents = [down[1], up[1]];
   await warpWatch;
   await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), yBefore);
   r.warpPeak = warpPeak;
@@ -692,7 +714,7 @@ async function body(browser, d, r) {
   await page
     .waitForFunction(
       () =>
-        [...document.querySelectorAll("[data-deal]")].every(
+        [...document.querySelectorAll("#projects [data-deal]")].every(
           (el) => getComputedStyle(el).transform === "none" && +getComputedStyle(el).opacity === 1,
         ),
       null,
@@ -761,7 +783,7 @@ async function body(browser, d, r) {
           getComputedStyle(el).transform === "none" && +getComputedStyle(el).opacity === 1;
         return (
           ok(document.querySelector("#projects [data-fly]")) &&
-          [...document.querySelectorAll("[data-deal]")].every(ok)
+          [...document.querySelectorAll("#projects [data-deal]")].every(ok)
         );
       },
       null,
@@ -770,7 +792,7 @@ async function body(browser, d, r) {
     .catch(() => {});
   r.projectsFly = await flyState("#projects [data-fly]");
   r.projectsDealt = await page.evaluate(() =>
-    [...document.querySelectorAll("[data-deal]")].every((el) => {
+    [...document.querySelectorAll("#projects [data-deal]")].every((el) => {
       const s = getComputedStyle(el);
       return +s.opacity === 1 && s.transform === "none";
     }),
@@ -813,6 +835,189 @@ async function body(browser, d, r) {
   ])
     if (!ok) r.problems.push(msg);
 
+  // Experience: education card, three roles in order, certificate column (right from 1024px),
+  // all cards dealt in; then the certificate lightbox opens and closes three ways.
+  await page.evaluate(() =>
+    document.getElementById("experience").scrollIntoView({ block: "start", behavior: "instant" }),
+  );
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll("#experience [data-deal]")].every(
+          (el) => getComputedStyle(el).transform === "none" && +getComputedStyle(el).opacity === 1,
+        ) &&
+        [...document.querySelectorAll("[data-certificate] img")].every(
+          (i) => i.complete && i.naturalWidth > 0,
+        ),
+      null,
+      { timeout: 8000 },
+    )
+    .catch(() => {});
+  Object.assign(
+    r,
+    await page.evaluate(() => {
+      const deal = [...document.querySelectorAll("#experience [data-deal]")];
+      const cert = document.querySelector("[data-certificate]");
+      const role = document.querySelector("[data-role]");
+      return {
+        expEducation: document.querySelectorAll("[data-education]").length,
+        expRoles: [...document.querySelectorAll("[data-role] p:first-child")].map((p) =>
+          p.textContent.trim(),
+        ),
+        expDealt:
+          deal.length === 5 &&
+          deal.every((el) => {
+            const s = getComputedStyle(el);
+            return +s.opacity === 1 && s.transform === "none";
+          }),
+        expCertBesideTimeline:
+          cert.getBoundingClientRect().left > role.getBoundingClientRect().right,
+        expCertImgLoaded: cert.querySelector("img")?.naturalWidth > 0,
+        jeanRoseRole: document.querySelector("[data-project=jean-rose] p")?.textContent.trim(),
+        overflowXExperience:
+          document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    }),
+  );
+  const wantRoles = ["Lead Full Stack Developer", "Project Leader", "Team Lead & Documentation Lead"];
+  for (const [ok, msg] of [
+    [r.expEducation === 1, `expEducation ${r.expEducation} (want 1)`],
+    [JSON.stringify(r.expRoles) === JSON.stringify(wantRoles), `expRoles ${JSON.stringify(r.expRoles)}`],
+    [r.expDealt, "experience cards not dealt"],
+    [
+      r.expCertBesideTimeline === d.ctx.viewport.width >= 1024,
+      `expCertBesideTimeline ${r.expCertBesideTimeline} at ${d.ctx.viewport.width}px`,
+    ],
+    [r.expCertImgLoaded, "certificate thumbnail not loaded"],
+    [r.jeanRoseRole === "Lead Full Stack Developer", `jeanRoseRole ${r.jeanRoseRole}`],
+    [r.overflowXExperience === 0, `overflowXExperience ${r.overflowXExperience}`],
+  ])
+    if (!ok) r.problems.push(msg);
+
+  // Lightbox. A real tap on touch devices, a click otherwise (both at viewport coordinates).
+  // Chromium taps go through CDP with a 60 ms press: slow software rendering can stretch a
+  // Playwright tap into a long press, which fires no click.
+  const press = async (x, y) => {
+    if (cdp) {
+      const t = Date.now() / 1000;
+      await touchAt("touchStart", x, y, t);
+      await touchAt("touchEnd", 0, 0, t + 0.06);
+    } else if (isTouch) await page.touchscreen.tap(x, y);
+    else await page.mouse.click(x, y);
+  };
+  const openCert = async () => {
+    await page.evaluate(() =>
+      document
+        .querySelector("[data-certificate]")
+        .scrollIntoView({ block: "center", behavior: "instant" }),
+    );
+    await wait(300);
+    const b = await page.locator("[data-certificate]").boundingBox();
+    await press(b.x + b.width / 2, b.y + b.height / 3);
+    // Headless Chromium touch emulation now and then drops the click of the first tap (the
+    // events show touchstart/touchend with no click; not reproducible in a fresh page). Retry
+    // once and record it, so a dropped tap stays visible in results.json.
+    const shown = await page
+      .waitForSelector(".lightbox[open]", { timeout: 3000 })
+      .then(() => true, () => false);
+    if (!shown && isTouch) {
+      r.lightboxTapRetries = (r.lightboxTapRetries ?? 0) + 1;
+      await press(b.x + b.width / 2, b.y + b.height / 3);
+      await page.waitForSelector(".lightbox[open]", { timeout: 3000 }).catch(() => {});
+    }
+    await wait(400);
+  };
+  const lbOpen = () => page.evaluate(() => !!document.querySelector(".lightbox[open]"));
+  // The thumbnail's keyboard focus ring (violet-soft box-shadow ring): focused and showing it?
+  // Read after the card's 300 ms box-shadow transition, never mid-way.
+  const certRing = async () => {
+    await wait(450);
+    return page.evaluate(() => {
+      const a = document.querySelector("[data-certificate]");
+      return {
+        focused: document.activeElement === a,
+        ring: getComputedStyle(a).boxShadow.includes("rgb(166, 140, 255)"),
+        lifted: !["none", "0px", "0px 0px"].includes(getComputedStyle(a).translate),
+      };
+    });
+  };
+  await openCert();
+  await page
+    .waitForFunction(() => document.querySelector(".lightbox-img")?.naturalWidth > 0, null, {
+      timeout: 8000,
+    })
+    .catch(() => {});
+  await wait(300); // let the open animation finish before measuring
+  Object.assign(
+    r,
+    await page.evaluate(() => {
+      const img = document.querySelector(".lightbox-img");
+      const b = img?.getBoundingClientRect();
+      const top = b && document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return {
+        lightboxOpen: !!document.querySelector(".lightbox[open]"),
+        lightboxImgLoaded: img?.naturalWidth > 0,
+        lightboxImgOnTop: top === img,
+        lightboxFits:
+          !!b && b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight,
+        lightboxFocus: document.activeElement?.getAttribute("aria-label"),
+      };
+    }),
+  );
+  await page.screenshot({ path: `${out}/${d.name}-11-lightbox.png` });
+  await page.keyboard.press("Escape");
+  await wait(300);
+  r.lightboxEscCloses = !(await lbOpen());
+  r.lightboxFocusReturns = await page.evaluate(
+    () => document.activeElement?.hasAttribute("data-certificate") ?? false,
+  );
+  await openCert();
+  await press(8, 30); // outside the image (the top-left padding)
+  await wait(300);
+  r.lightboxOutsideCloses = !(await lbOpen());
+  r.ringAfterTapOutside = await certRing();
+  await openCert();
+  const cb = await page.locator(".lightbox button").boundingBox();
+  r.lightboxCloseSize = cb && Math.min(cb.width, cb.height);
+  if (cb) await press(cb.x + cb.width / 2, cb.y + cb.height / 2);
+  await wait(300);
+  r.lightboxButtonCloses = !(await lbOpen());
+  r.ringAfterCloseTap = await certRing();
+  // Keyboard: Enter on the (autofocused) close button closes it and the ring does show.
+  await openCert();
+  await page.keyboard.press("Enter");
+  await wait(300);
+  r.lightboxEnterCloses = !(await lbOpen());
+  r.ringAfterKeyboard = await certRing();
+  await page.evaluate(() => document.activeElement?.blur());
+  for (const [ok, msg] of [
+    [r.lightboxOpen, "lightbox did not open"],
+    [r.lightboxImgLoaded, "lightbox image not loaded"],
+    [r.lightboxImgOnTop, "lightbox image covered"],
+    [r.lightboxFits, "lightbox image does not fit the screen"],
+    [r.lightboxFocus === "Close certificate", `lightbox focus on ${r.lightboxFocus}`],
+    [r.lightboxEscCloses, "Esc did not close the lightbox"],
+    [r.lightboxFocusReturns, "focus did not return to the thumbnail"],
+    [r.lightboxOutsideCloses, "tap outside did not close the lightbox"],
+    [r.lightboxCloseSize >= 44, `close button ${r.lightboxCloseSize}px (want >= 44)`],
+    [r.lightboxButtonCloses, "close button did not close the lightbox"],
+    [
+      r.ringAfterTapOutside.focused && !r.ringAfterTapOutside.ring && !r.ringAfterTapOutside.lifted,
+      `after a tap outside: ${JSON.stringify(r.ringAfterTapOutside)} (want focused only)`,
+    ],
+    [
+      r.ringAfterCloseTap.focused && !r.ringAfterCloseTap.ring && !r.ringAfterCloseTap.lifted,
+      `after a close-button tap: ${JSON.stringify(r.ringAfterCloseTap)} (want focused only)`,
+    ],
+    [r.lightboxEnterCloses, "Enter on the close button did not close the lightbox"],
+    [
+      r.ringAfterKeyboard.focused && r.ringAfterKeyboard.ring && r.ringAfterKeyboard.lifted,
+      `after a keyboard close: ${JSON.stringify(r.ringAfterKeyboard)} (want focused, ring, lift)`,
+    ],
+  ])
+    if (!ok) r.problems.push(msg);
+  await page.locator("#experience").screenshot({ path: `${out}/${d.name}-10-experience.png` });
+
   // Mobile menu (below md): opens above everything and pauses the sky.
   if ((d.ctx.viewport.width ?? 1280) < 768) {
     // A real tap (page.click would first scroll the page, which a finger never does).
@@ -845,11 +1050,20 @@ async function body(browser, d, r) {
       shock: document.documentElement.hasAttribute("data-shock"),
       opacity: +s.opacity,
       transform: s.transform,
+      cardsStill: [...document.querySelectorAll("#experience [data-deal]")].every(
+        (c) => +getComputedStyle(c).opacity === 1 && getComputedStyle(c).transform === "none",
+      ),
       sky: document.querySelector("[data-atmosphere]")?.dataset.atmosphere,
     };
   });
   r.reducedMotionShock = rm;
-  if (rm.shock || rm.opacity !== 1 || rm.transform !== "none" || rm.sky !== "static")
+  if (
+    rm.shock ||
+    rm.opacity !== 1 ||
+    rm.transform !== "none" ||
+    !rm.cardsStill ||
+    rm.sky !== "static"
+  )
     r.problems.push(`reduced motion still animates ${JSON.stringify(rm)}`);
   await page.emulateMedia({ reducedMotion: "no-preference" });
 

@@ -94,7 +94,7 @@ Nav order: Home · About · Projects · Experience · Contact
    - The full name stays in the page title/metadata and is the card's alt text (it's not in the h1)
    - Right side: the lanyard card
 2. **About**: photo, bio, **Download CV** (`/cv.pdf`), then a stack grid with tech logos, grouped (see Skills)
-3. **Projects**: one card per project with a screenshot, title, one-line pitch, tech tags, links and the "Team project" role note
+3. **Projects**: one card per project with a screenshot, title, one-line pitch, tech tags, links and the role
 4. **Experience**: Education & Leadership timeline, plus certificates if any
 5. **Contact**: email, GitHub, LinkedIn, and a contact form (Supabase, later phase)
 6. **Footer**: © 2026 Jeric Contadan, social icons, back to top
@@ -109,7 +109,7 @@ I build fast with modern AI tools, but I care about the fundamentals: clean data
 and secure systems.
 
 ### Projects
-**Jean Rose POS & Inventory Platform** (team project, 5 members, role: Full Stack Developer)
+**Jean Rose POS & Inventory Platform** (role: Lead Full Stack Developer)
 A full stack point-of-sale and inventory system for a retail beauty-products business. It covers
 sales processing, real-time stock tracking, automated low-stock email alerts through an email API,
 and secure password recovery. It runs on a 12-table relational database, is hosted in the cloud,
@@ -136,17 +136,23 @@ Only these two projects are shown. PinoyCart appears in Experience as a leadersh
 - Workflow: Git & GitHub, Jira (Scrum), Playwright
 
 ### Education & Leadership
-- BS Information Systems, Technological University of the Philippines – Manila, expected 2028
-- Project Leader: Lechon De Jay system and website
-- Team Lead & Documentation Lead: PinoyCart Security Risk Assessment (4-person audit of an
-  e-commerce platform: asset identification, threat modeling, risk rating, security controls)
+Education: BS Information Systems, Technological University of the Philippines – Manila,
+Section BSIS-3C, expected 2028.
+
+Leadership & Roles, in this order:
+- Lead Full Stack Developer, Jean Rose POS & Inventory Platform: built the entire system: front end,
+  back end, database, email API integration and cloud deployment.
+- Project Leader, Lechon De Jay system and website: led the project from client interviews to launch.
+- Team Lead & Documentation Lead, PinoyCart Security Risk Assessment: led a security audit of an
+  e-commerce platform.
 
 ### Certificates
 - **Certificate of Participation: G-tech Summit 2025**
   - Google Developer Groups on Campus – TUP Manila
   - February 28, 2025, IRTC Conference Hall, TUP Manila
   - Image: `/certificates/gdg-gtech-summit-2025.jpg`
-  - Show it as a thumbnail card that opens full size on click.
+  - Show it as a thumbnail card that opens full size on click, and closes with Esc, a tap
+    outside, or a close button.
 
 ### Contact
 - Email: jericcontadan6@gmail.com
